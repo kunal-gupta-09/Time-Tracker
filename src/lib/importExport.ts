@@ -93,10 +93,14 @@ export function parseImportJson(
       return;
     }
 
-    // WFH / Leave entries have no time fields
+    // WFH / Leave entries have no time fields.
+    // Note: `userId` is deliberately blank here and on the Completed branch
+    // below — bulkImport stamps the importing user's own id. A file claiming
+    // someone else's id must never be able to write to their rows.
     if (declaredStatus === "WFH" || declaredStatus === "Leave") {
       records.push({
         id: typeof o.id === "string" ? o.id : uuidv4(),
+        userId: "",
         date,
         timeIn: "",
         timeOut: null,
@@ -124,6 +128,7 @@ export function parseImportJson(
 
     records.push({
       id: typeof o.id === "string" ? o.id : uuidv4(),
+      userId: "",
       date,
       timeIn,
       timeOut,

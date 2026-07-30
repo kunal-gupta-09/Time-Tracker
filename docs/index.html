@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Time Tracker</title>
+<meta name="description" content="Time Tracker — a timesheet app for recording your working hours.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⏱</text></svg>">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; }
+
+  :root {
+    --ground: #FBFBFC;
+    --ink: #1B1D21;
+    --ink-soft: #4A4E57;
+    --muted: #6B7280;
+    --accent: #3B4CCA;
+    --rule: #E4E5EA;
+    --serif: Georgia, 'Iowan Old Style', 'Times New Roman', Times, serif;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #131417; --ink: #E8E9ED; --ink-soft: #B4B8C2;
+      --muted: #8B909B; --accent: #8B96E8; --rule: #2A2D34;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #131417; --ink: #E8E9ED; --ink-soft: #B4B8C2;
+    --muted: #8B909B; --accent: #8B96E8; --rule: #2A2D34;
+  }
+  :root[data-theme="light"] {
+    --ground: #FBFBFC; --ink: #1B1D21; --ink-soft: #4A4E57;
+    --muted: #6B7280; --accent: #3B4CCA; --rule: #E4E5EA;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 40rem;
+    margin: 0 auto;
+    padding: 5rem 1.5rem;
+  }
+
+  .eyebrow {
+    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 0.75rem;
+  }
+
+  h1 {
+    font-family: var(--serif);
+    font-size: clamp(2rem, 6vw, 2.75rem);
+    font-weight: 400; line-height: 1.15; margin: 0 0 1rem;
+    letter-spacing: -0.01em; text-wrap: balance;
+  }
+
+  p { color: var(--ink-soft); margin: 0 0 2.5rem; }
+
+  .links { display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--rule); }
+
+  .links a {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+    padding: 1.125rem 0; border-bottom: 1px solid var(--rule);
+    color: var(--ink); text-decoration: none; font-weight: 550;
+  }
+  .links a:hover { color: var(--accent); }
+  .links a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .links .hint { font-size: 0.875rem; color: var(--muted); font-weight: 400; text-align: right; }
+
+  footer { margin-top: 3rem; font-size: 0.8125rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Time Tracker</div>
+  <h1>Record your working hours</h1>
+  <p>
+    A timesheet app for punching in and out, marking Work from Home or Leave,
+    and exporting a monthly report.
+  </p>
+
+  <nav class="links">
+    <a href="privacy-policy.html">
+      <span>Privacy Policy</span>
+      <span class="hint">What we collect and how to delete it</span>
+    </a>
+    <a href="https://github.com/kunal-gupta-09/Time-Tracker">
+      <span>Source code</span>
+      <span class="hint">GitHub</span>
+    </a>
+  </nav>
+
+  <footer>Contact: <a href="mailto:kunalgupta9806@gmail.com" style="color:var(--accent)">kunalgupta9806@gmail.com</a></footer>
+</div>
+</body>
+</html>

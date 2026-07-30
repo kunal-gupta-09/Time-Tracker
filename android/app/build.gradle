@@ -1,12 +1,35 @@
 apply plugin: 'com.android.application'
 
+// Release signing credentials live in android/keystore.properties (gitignored).
+// Without that file the project still builds — only `assembleRelease` /
+// `bundleRelease` need it — so a fresh clone isn't broken for debug work.
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+def hasReleaseSigning = keystorePropertiesFile.exists()
+if (hasReleaseSigning) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace "com.timesheet.app"
     compileSdk rootProject.ext.compileSdkVersion
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+
     defaultConfig {
         applicationId "com.timesheet.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
+        // Bump versionCode on EVERY Play upload — Google rejects a reused one.
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -18,6 +41,13 @@ android {
     }
     buildTypes {
         release {
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+            // Shrinking is off deliberately. The app's logic lives in the web
+            // bundle (already minified by Vite); the Java side is just the
+            // Capacitor bridge, where R8 mainly risks stripping plugin classes
+            // reached by reflection. Little to gain, real risk of breakage.
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

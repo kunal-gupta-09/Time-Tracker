@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Time Tracker</title>
+<meta name="description" content="Privacy policy for the Time Tracker timesheet app: what it collects, why, and how to delete your data.">
+<meta name="robots" content="index, follow">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔒</text></svg>">
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; }
+
+  :root {
+    --ground: #FBFBFC;
+    --raise: #FFFFFF;
+    --ink: #1B1D21;
+    --ink-soft: #4A4E57;
+    --muted: #6B7280;
+    --accent: #3B4CCA;
+    --accent-soft: #EEF0FC;
+    --rule: #E4E5EA;
+    --rule-strong: #CFD1DA;
+
+    --serif: Georgia, 'Iowan Old Style', 'Times New Roman', Times, serif;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #131417;
+      --raise: #1A1C20;
+      --ink: #E8E9ED;
+      --ink-soft: #B4B8C2;
+      --muted: #8B909B;
+      --accent: #8B96E8;
+      --accent-soft: #1E2133;
+      --rule: #2A2D34;
+      --rule-strong: #3A3E47;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #131417;
+    --raise: #1A1C20;
+    --ink: #E8E9ED;
+    --ink-soft: #B4B8C2;
+    --muted: #8B909B;
+    --accent: #8B96E8;
+    --accent-soft: #1E2133;
+    --rule: #2A2D34;
+    --rule-strong: #3A3E47;
+  }
+
+  :root[data-theme="light"] {
+    --ground: #FBFBFC;
+    --raise: #FFFFFF;
+    --ink: #1B1D21;
+    --ink-soft: #4A4E57;
+    --muted: #6B7280;
+    --accent: #3B4CCA;
+    --accent-soft: #EEF0FC;
+    --rule: #E4E5EA;
+    --rule-strong: #CFD1DA;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 17px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 68ch;
+    margin: 0 auto;
+    padding: 4rem 1.5rem 6rem;
+  }
+
+  /* ---- Masthead ---- */
+  .masthead {
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 1.5rem;
+    margin-bottom: 2.5rem;
+  }
+
+  .eyebrow {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 0.75rem;
+  }
+
+  h1 {
+    font-family: var(--serif);
+    font-size: clamp(2rem, 6vw, 2.75rem);
+    line-height: 1.15;
+    font-weight: 400;
+    text-wrap: balance;
+    letter-spacing: -0.01em;
+  }
+
+  .updated {
+    margin-top: 1rem;
+    font-size: 0.875rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .lede {
+    font-size: 1.0625rem;
+    color: var(--ink-soft);
+    margin-bottom: 2.5rem;
+  }
+
+  /* ---- Sections ---- */
+  section { margin-bottom: 2.75rem; }
+
+  h2 {
+    font-family: var(--serif);
+    font-size: 1.4rem;
+    font-weight: 400;
+    line-height: 1.3;
+    margin-bottom: 0.875rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--rule);
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-size: 0.95rem;
+    font-weight: 650;
+    margin: 1.75rem 0 0.5rem;
+    color: var(--ink);
+  }
+
+  p { margin-bottom: 1rem; color: var(--ink-soft); }
+  p:last-child { margin-bottom: 0; }
+
+  strong { color: var(--ink); font-weight: 650; }
+
+  ul { margin: 0 0 1rem; padding-left: 1.25rem; }
+  li { margin-bottom: 0.4rem; color: var(--ink-soft); }
+  li::marker { color: var(--rule-strong); }
+
+  a {
+    color: var(--accent);
+    text-underline-offset: 2px;
+    text-decoration-thickness: 1px;
+  }
+  a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  /* ---- Purpose table ---- */
+  .table-scroll { overflow-x: auto; margin-bottom: 1rem; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9375rem;
+    min-width: 30rem;
+  }
+
+  th {
+    text-align: left;
+    font-size: 0.7rem;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 0 1rem 0.6rem 0;
+    border-bottom: 1px solid var(--rule-strong);
+  }
+
+  td {
+    padding: 0.75rem 1rem 0.75rem 0;
+    border-bottom: 1px solid var(--rule);
+    color: var(--ink-soft);
+    vertical-align: top;
+  }
+
+  td:first-child { color: var(--ink); font-weight: 550; width: 38%; }
+
+  /* ---- Callout: the controls a reviewer looks for ---- */
+  .controls {
+    background: var(--raise);
+    border: 1px solid var(--rule-strong);
+    border-left: 3px solid var(--accent);
+    padding: 1.25rem 1.5rem;
+    margin: 1.25rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .control-row { display: flex; flex-direction: column; gap: 0.15rem; }
+
+  .control-name {
+    font-size: 0.8125rem;
+    font-weight: 650;
+    color: var(--accent);
+    font-family: var(--sans);
+  }
+
+  .control-desc { font-size: 0.9375rem; color: var(--ink-soft); }
+
+  .note {
+    background: var(--accent-soft);
+    padding: 1rem 1.25rem;
+    font-size: 0.9375rem;
+    color: var(--ink-soft);
+    margin-bottom: 1rem;
+  }
+  .note strong { display: block; margin-bottom: 0.25rem; }
+
+  /* ---- Contact ---- */
+  .contact {
+    margin-top: 3.5rem;
+    padding-top: 1.75rem;
+    border-top: 2px solid var(--ink);
+  }
+  .contact-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.4rem;
+  }
+  .contact a { font-size: 1.05rem; font-weight: 550; }
+
+  @media (max-width: 480px) {
+    body { font-size: 16px; }
+    .wrap { padding: 2.5rem 1.25rem 4rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Time Tracker</div>
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated 30 July 2026</p>
+  </header>
+
+  <p class="lede">
+    Time Tracker is a timesheet app that lets you record your own working hours.
+    This policy explains what the app collects, why it collects it, and what
+    control you have over it.
+  </p>
+
+  <section>
+    <h2>What we collect</h2>
+
+    <h3>Account information, from Google Sign-In</h3>
+    <p>When you sign in with Google, we receive and store:</p>
+    <ul>
+      <li>Your email address</li>
+      <li>Your name</li>
+      <li>Your Google profile picture URL</li>
+      <li>A unique account identifier</li>
+    </ul>
+    <p>
+      We never receive your Google password, and we cannot access your Gmail,
+      contacts, files, or any other Google service.
+    </p>
+
+    <h3>Timesheet data, created by you</h3>
+    <ul>
+      <li>Dates you worked</li>
+      <li>Clock-in and clock-out times, and the calculated hours</li>
+      <li>Day markers you choose — Work from Home, On Leave</li>
+      <li>Any notes you type against a day</li>
+    </ul>
+
+    <h3>What we do not collect</h3>
+    <p>
+      The app contains no analytics, advertising, or tracking SDKs. We do not
+      collect your location, contacts, photos, camera, microphone, advertising
+      identifiers, or your browsing activity.
+    </p>
+  </section>
+
+  <section>
+    <h2>Why we collect it</h2>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Data</th><th>Purpose</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Email, name, account identifier</td>
+            <td>To create your account, sign you in, and keep your timesheet separate from everyone else's</td>
+          </tr>
+          <tr>
+            <td>Profile picture URL</td>
+            <td>To display your name and picture in the app</td>
+          </tr>
+          <tr>
+            <td>Timesheet entries and notes</td>
+            <td>To provide the app's core function — recording and reporting your hours</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      We do not use your data for advertising or profiling, and we do not sell it.
+    </p>
+  </section>
+
+  <section>
+    <h2>Where your data is stored</h2>
+    <p>
+      Your data is stored using <a href="https://supabase.com" target="_blank" rel="noopener">Supabase</a>,
+      a hosted database provider, and is encrypted in transit using TLS.
+    </p>
+    <p>
+      Each account's records are isolated at the database level using row-level
+      security. A signed-in user can only read and write their own entries.
+    </p>
+    <div class="note">
+      <strong>A copy stays on your device</strong>
+      So the app works without a connection, your recent entries and any unsent
+      changes are kept on your device. That local copy is removed when you sign
+      out, once pending changes have uploaded, or when you delete your account.
+    </div>
+  </section>
+
+  <section>
+    <h2>Who your data is shared with</h2>
+    <p>We do not sell, rent, or trade your personal information. Data is shared only with:</p>
+    <ul>
+      <li><strong>Supabase</strong> — our database and authentication provider, which stores the data on our behalf</li>
+      <li><strong>Google</strong> — solely to authenticate you when you choose "Sign in with Google"</li>
+    </ul>
+    <p>We may disclose information if we are legally required to do so.</p>
+    <div class="note">
+      <strong>Exported files leave the app</strong>
+      You can export your timesheet as a PDF or JSON file. Once you share an
+      exported file, that copy is outside the app's control and this policy no
+      longer governs it.
+    </div>
+  </section>
+
+  <section>
+    <h2>How long we keep it</h2>
+    <p>
+      We keep your data for as long as your account exists. When you delete your
+      account, your profile and all timesheet entries are deleted immediately and
+      permanently. Deleted data cannot be recovered.
+    </p>
+  </section>
+
+  <section>
+    <h2>Your rights and choices</h2>
+    <p>Everything below is available inside the app, with no need to contact us:</p>
+
+    <div class="controls">
+      <div class="control-row">
+        <span class="control-name">Dashboard → Delete My Account</span>
+        <span class="control-desc">Permanently erases your account, your profile, and every timesheet entry.</span>
+      </div>
+      <div class="control-row">
+        <span class="control-name">Dashboard → Erase All Data</span>
+        <span class="control-desc">Deletes all your entries but keeps your account active.</span>
+      </div>
+      <div class="control-row">
+        <span class="control-name">Dashboard → Export PDF or Export JSON</span>
+        <span class="control-desc">Obtain a copy of your records at any time.</span>
+      </div>
+    </div>
+
+    <p>
+      You can view and edit all of your data directly in the app. Depending on
+      where you live, you may have additional rights under laws such as the GDPR
+      or CCPA, including access, correction, deletion, and portability. The
+      in-app controls above cover these — email us for anything else.
+    </p>
+  </section>
+
+  <section>
+    <h2>Children</h2>
+    <p>
+      Time Tracker is intended for working adults and is not directed at children
+      under 13. We do not knowingly collect data from children. If you believe a
+      child has provided us with personal information, contact us and we will
+      delete it.
+    </p>
+  </section>
+
+  <section>
+    <h2>Security</h2>
+    <p>
+      Data is encrypted in transit using TLS. Access is protected by Google
+      authentication, and database row-level security ensures one account cannot
+      read another's records.
+    </p>
+    <p>
+      No system is perfectly secure, and we cannot guarantee absolute security.
+      If a breach affects your data, we will notify affected users.
+    </p>
+  </section>
+
+  <section>
+    <h2>Changes to this policy</h2>
+    <p>
+      If this policy changes materially, we will update the date at the top of
+      this page and, where appropriate, notify you in the app.
+    </p>
+  </section>
+
+  <div class="contact">
+    <div class="contact-label">Questions about your data</div>
+    <a href="mailto:kunalgupta9806@gmail.com">kunalgupta9806@gmail.com</a>
+  </div>
+
+</div>
+</body>
+</html>

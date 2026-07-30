@@ -66,3 +66,9 @@ timesheet-import.json
 .env
 .env.local
 .env.*.local
+
+# Signing keys — never commit. The release keystore itself lives outside the
+# repo (see README), but guard against a stray copy being added here.
+*.jks
+*.keystore
+**/keystore.properties

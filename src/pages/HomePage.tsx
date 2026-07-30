@@ -1,18 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { v4 as uuidv4 } from "uuid";
 import {
-  getActiveRecord,
   getRecords,
-  addRecord,
   updateRecord,
   calcTotalHours,
   upsertManualEntry,
   hasTimeEntryForDate,
-  removeRecordsForDate,
   getNotesForDate,
-  getUserName,
-  setUserName,
 } from "../lib/storage";
+import { useAuth } from "../context/AuthContext";
+import { useSync } from "../context/SyncContext";
+import SyncBanner from "../components/SyncBanner";
+import { errorMessage } from "../lib/network";
 import type { TimeRecord } from "../lib/types";
 
 function todayStr() {
@@ -44,14 +43,14 @@ function avgColorClass(hours: number): string {
   return "text-slate-700";
 }
 
-function getPunchOutPreview(active: TimeRecord, now: Date) {
+function getPunchOutPreview(active: TimeRecord, now: Date, allRecords: TimeRecord[]) {
   const [y, m, d] = active.date.split("-").map(Number);
   const [hh, mm] = active.timeIn.split(":").map(Number);
   const start = new Date(y, m - 1, d, hh, mm).getTime();
   const sessionHours = Math.max(0, (now.getTime() - start) / 3600000);
 
   const month = active.date.slice(0, 7);
-  const othersThisMonth = getRecords().filter(
+  const othersThisMonth = allRecords.filter(
     (r) =>
       r.id !== active.id &&
       r.date.startsWith(month) &&
@@ -91,10 +90,16 @@ function elapsedFrom(date: string, timeIn: string, now: Date): string {
 }
 
 export default function HomePage() {
+  const { displayName } = useAuth();
+  const { refreshPending } = useSync();
   const [active, setActive] = useState<TimeRecord | null>(null);
+  const [allRecords, setAllRecords] = useState<TimeRecord[]>([]);
   const [clock, setClock] = useState("");
   const [dateLabel, setDateLabel] = useState("");
   const [now, setNow] = useState<Date>(() => new Date());
+  const [loadError, setLoadError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [todayHasEntry, setTodayHasEntry] = useState(false);
 
   // Manual entry state
   const [manType, setManType] = useState<"Time" | "WFH" | "Leave">("Time");
@@ -105,16 +110,30 @@ export default function HomePage() {
   const [manSuccess, setManSuccess] = useState("");
   const [punchInConflict, setPunchInConflict] = useState(false);
   const [confirmPunchOut, setConfirmPunchOut] = useState(false);
-  const [userName, setUserNameState] = useState<string>("");
-  const [editingName, setEditingName] = useState(false);
-  const [nameDraft, setNameDraft] = useState("");
   const [quickEntryType, setQuickEntryType] = useState<"WFH" | "Leave" | null>(null);
 
-  const refresh = useCallback(() => setActive(getActiveRecord()), []);
+  // Pulls the full record set once; the punch-out preview and today's-entry
+  // check both read from it instead of hitting the network mid-render.
+  const refresh = useCallback(async () => {
+    try {
+      const records = await getRecords();
+      setAllRecords(records);
+      setActive(records.find((r) => r.status === "Working") ?? null);
+      setTodayHasEntry(
+        records.some((r) => r.date === todayStr() && r.status !== "Note")
+      );
+      setLoadError("");
+    } catch (err) {
+      setLoadError(errorMessage(err));
+    } finally {
+      // Every mutation handler ends in refresh(), so updating the pending
+      // count here keeps the sync banner accurate without touching each one.
+      refreshPending();
+    }
+  }, [refreshPending]);
 
   useEffect(() => {
-    refresh();
-    setUserNameState(getUserName() ?? "");
+    void refresh();
     const tick = () => {
       const n = new Date();
       setClock(
@@ -142,69 +161,77 @@ export default function HomePage() {
     return () => clearInterval(id);
   }, [active]);
 
-  function handlePunchIn() {
-    const today = todayStr();
-    const conflict = hasTimeEntryForDate(today);
-    if (conflict) {
-      setPunchInConflict(true);
-      return;
+  async function handlePunchIn() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      // Re-check against the server rather than trusting local state — another
+      // device may have added an entry for today since this page loaded.
+      if (await hasTimeEntryForDate(todayStr())) {
+        setPunchInConflict(true);
+        return;
+      }
+      await doPunchIn();
+    } catch (err) {
+      setLoadError(errorMessage(err));
+    } finally {
+      setBusy(false);
     }
-    doPunchIn();
   }
 
-  function doPunchIn() {
+  async function doPunchIn() {
     const today = todayStr();
-    const existingNotes = getNotesForDate(today);
-    removeRecordsForDate(today);
-    const rec: TimeRecord = {
+    const existingNotes = await getNotesForDate(today);
+    // upsert (not delete-then-insert) so the day's row is replaced atomically.
+    await upsertManualEntry({
       id: uuidv4(),
+      userId: "",
       date: today,
       timeIn: nowTimeStr(),
       timeOut: null,
       totalHours: null,
       status: "Working",
       ...(existingNotes ? { notes: existingNotes } : {}),
-    };
-    addRecord(rec);
-    setActive(rec);
+    });
+    await refresh();
   }
 
-  function handlePunchInConfirmed() {
+  async function handlePunchInConfirmed() {
+    if (busy) return;
+    setBusy(true);
     setPunchInConflict(false);
-    doPunchIn();
+    try {
+      await doPunchIn();
+    } catch (err) {
+      setLoadError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function handleQuickEntryConfirmed() {
-    if (!quickEntryType) return;
+  async function handleQuickEntryConfirmed() {
+    if (!quickEntryType || busy) return;
+    setBusy(true);
     const today = todayStr();
-    const existingNotes = getNotesForDate(today);
-    removeRecordsForDate(today);
-    const rec: TimeRecord = {
-      id: uuidv4(),
-      date: today,
-      timeIn: "",
-      timeOut: null,
-      totalHours: null,
-      status: quickEntryType,
-      ...(existingNotes ? { notes: existingNotes } : {}),
-    };
-    addRecord(rec);
-    // If an active session existed for today, it's gone — clear UI state
-    if (active && active.date === today) setActive(null);
-    setQuickEntryType(null);
-  }
-
-  function startEditName() {
-    setNameDraft(userName);
-    setEditingName(true);
-  }
-
-  function saveName() {
-    const trimmed = nameDraft.trim();
-    if (!trimmed) return;
-    setUserName(trimmed);
-    setUserNameState(trimmed);
-    setEditingName(false);
+    try {
+      const existingNotes = await getNotesForDate(today);
+      await upsertManualEntry({
+        id: uuidv4(),
+        userId: "",
+        date: today,
+        timeIn: "",
+        timeOut: null,
+        totalHours: null,
+        status: quickEntryType,
+        ...(existingNotes ? { notes: existingNotes } : {}),
+      });
+      await refresh();
+      setQuickEntryType(null);
+    } catch (err) {
+      setLoadError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
   }
 
   function handlePunchOut() {
@@ -212,18 +239,30 @@ export default function HomePage() {
     setConfirmPunchOut(true);
   }
 
-  function handlePunchOutConfirmed() {
-    if (!active) return;
+  async function handlePunchOutConfirmed() {
+    if (!active || busy) return;
     const outTime = nowTimeStr();
     const totalHours = calcTotalHours(active.timeIn, outTime);
     if (totalHours < 0) return;
-    const updated: TimeRecord = { ...active, timeOut: outTime, totalHours, status: "Completed" };
-    updateRecord(updated);
-    setActive(null);
-    setConfirmPunchOut(false);
+    setBusy(true);
+    try {
+      await updateRecord({
+        ...active,
+        timeOut: outTime,
+        totalHours,
+        status: "Completed",
+      });
+      await refresh();
+      setConfirmPunchOut(false);
+    } catch (err) {
+      setLoadError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function handleManualSave() {
+  async function handleManualSave() {
+    if (busy) return;
     setManError("");
     setManSuccess("");
     if (!manDate) {
@@ -233,23 +272,31 @@ export default function HomePage() {
 
     // WFH / Leave: no time fields needed
     if (manType === "WFH" || manType === "Leave") {
-      const existingNotes = getNotesForDate(manDate);
-      const { replaced } = upsertManualEntry({
-        id: uuidv4(),
-        date: manDate,
-        timeIn: "",
-        timeOut: null,
-        totalHours: null,
-        status: manType,
-        ...(existingNotes ? { notes: existingNotes } : {}),
-      });
-      if (replaced && active && active.date === manDate) setActive(null);
-      setManDate(todayStr());
-      const label = manType === "WFH" ? "Work from Home" : "On Leave";
-      setManSuccess(
-        replaced ? `${label} entry replaced.` : `${label} entry saved.`
-      );
-      setTimeout(() => setManSuccess(""), 3000);
+      setBusy(true);
+      try {
+        const existingNotes = await getNotesForDate(manDate);
+        const { replaced } = await upsertManualEntry({
+          id: uuidv4(),
+          userId: "",
+          date: manDate,
+          timeIn: "",
+          timeOut: null,
+          totalHours: null,
+          status: manType,
+          ...(existingNotes ? { notes: existingNotes } : {}),
+        });
+        await refresh();
+        setManDate(todayStr());
+        const label = manType === "WFH" ? "Work from Home" : "On Leave";
+        setManSuccess(
+          replaced ? `${label} entry replaced.` : `${label} entry saved.`
+        );
+        setTimeout(() => setManSuccess(""), 3000);
+      } catch (err) {
+        setManError(errorMessage(err));
+      } finally {
+        setBusy(false);
+      }
       return;
     }
 
@@ -266,52 +313,51 @@ export default function HomePage() {
       return;
     }
 
-    const existingNotes = getNotesForDate(manDate);
-
-    let record: TimeRecord;
-    if (noTimeOut) {
-      record = {
-        id: uuidv4(),
-        date: manDate,
-        timeIn: manIn,
-        timeOut: null,
-        totalHours: null,
-        status: "Working",
-        ...(existingNotes ? { notes: existingNotes } : {}),
-      };
-    } else {
-      const total = calcTotalHours(manIn, manOut);
-      if (total <= 0) {
-        setManError("Time Out must be later than Time In.");
-        return;
-      }
-      record = {
-        id: uuidv4(),
-        date: manDate,
-        timeIn: manIn,
-        timeOut: manOut,
-        totalHours: total,
-        status: "Completed",
-        ...(existingNotes ? { notes: existingNotes } : {}),
-      };
+    if (!noTimeOut && calcTotalHours(manIn, manOut) <= 0) {
+      setManError("Time Out must be later than Time In.");
+      return;
     }
 
-    const { replaced } = upsertManualEntry(record);
-    setActive(record.status === "Working" ? record : null);
+    setBusy(true);
+    try {
+      const existingNotes = await getNotesForDate(manDate);
+      const base = {
+        id: uuidv4(),
+        userId: "",
+        date: manDate,
+        timeIn: manIn,
+        ...(existingNotes ? { notes: existingNotes } : {}),
+      };
+      const record: TimeRecord = noTimeOut
+        ? { ...base, timeOut: null, totalHours: null, status: "Working" }
+        : {
+            ...base,
+            timeOut: manOut,
+            totalHours: calcTotalHours(manIn, manOut),
+            status: "Completed",
+          };
 
-    setManDate(todayStr());
-    setManIn("");
-    setManOut("");
-    const verb =
-      record.status === "Working"
-        ? replaced
-          ? "Working session started (replaced existing entry)."
-          : "Working session started."
-        : replaced
-        ? "Existing entry replaced."
-        : "Entry saved successfully.";
-    setManSuccess(verb);
-    setTimeout(() => setManSuccess(""), 3000);
+      const { replaced } = await upsertManualEntry(record);
+      await refresh();
+
+      setManDate(todayStr());
+      setManIn("");
+      setManOut("");
+      setManSuccess(
+        record.status === "Working"
+          ? replaced
+            ? "Working session started (replaced existing entry)."
+            : "Working session started."
+          : replaced
+          ? "Existing entry replaced."
+          : "Entry saved successfully."
+      );
+      setTimeout(() => setManSuccess(""), 3000);
+    } catch (err) {
+      setManError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
   }
 
   const isPunched = active !== null;
@@ -321,61 +367,23 @@ export default function HomePage() {
       {/* Header */}
       <div className="mb-8">
         <p className="text-slate-400 text-sm font-medium">{dateLabel}</p>
-        {userName && !editingName && (
-          <button
-            onClick={startEditName}
-            className="mt-1 inline-flex items-center gap-1.5 text-indigo-600 hover:text-indigo-700 text-sm font-semibold group"
-          >
-            Hi, {userName}!
-            <svg
-              className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zM19.5 15.75v3.375c0 .621-.504 1.125-1.125 1.125H5.625a1.125 1.125 0 01-1.125-1.125V6.375c0-.621.504-1.125 1.125-1.125H9.75"
-              />
-            </svg>
-          </button>
-        )}
-        {editingName && (
-          <div className="mt-1 flex items-center gap-2">
-            <input
-              type="text"
-              autoFocus
-              value={nameDraft}
-              onChange={(e) => setNameDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") saveName();
-                if (e.key === "Escape") setEditingName(false);
-              }}
-              maxLength={40}
-              placeholder="Your name"
-              className="border border-slate-200 rounded-lg px-3 py-1 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-transparent"
-            />
-            <button
-              onClick={saveName}
-              disabled={!nameDraft.trim()}
-              className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 text-white text-xs font-semibold rounded-lg disabled:cursor-not-allowed"
-            >
-              Save
-            </button>
-            <button
-              onClick={() => setEditingName(false)}
-              className="text-slate-400 hover:text-slate-600 text-xs font-semibold"
-            >
-              Cancel
-            </button>
-          </div>
+        {displayName && (
+          <p className="mt-1 text-indigo-600 text-sm font-semibold">
+            Hi, {displayName}!
+          </p>
         )}
         <h1 className="text-2xl font-bold text-slate-800 mt-1">
           {isPunched ? "You're clocked in" : "Ready to start?"}
         </h1>
       </div>
+
+      <SyncBanner />
+
+      {loadError && (
+        <div className="mb-6 px-4 py-3 bg-rose-50 border border-rose-100 rounded-xl text-sm text-rose-700">
+          {loadError}
+        </div>
+      )}
 
       {/* Live clock OR elapsed session timer */}
       <div className="text-center mb-8">
@@ -402,13 +410,20 @@ export default function HomePage() {
       <div className="flex justify-center mb-2">
         <button
           onClick={isPunched ? handlePunchOut : handlePunchIn}
-          className={`w-52 h-52 rounded-full text-white text-2xl font-bold shadow-xl active:scale-95 transition-all duration-150 flex items-center justify-center ${
+          disabled={busy}
+          className={`w-52 h-52 rounded-full text-white text-2xl font-bold shadow-xl active:scale-95 transition-all duration-150 flex items-center justify-center disabled:opacity-70 disabled:cursor-not-allowed disabled:active:scale-100 ${
             isPunched
               ? "bg-rose-500 hover:bg-rose-600 ring-8 ring-rose-100/70 shadow-rose-300/40"
               : "bg-indigo-600 hover:bg-indigo-700 ring-8 ring-indigo-100/70 shadow-indigo-300/40"
           }`}
         >
-          {isPunched ? "Punch Out" : "Punch In"}
+          {busy ? (
+            <span className="w-9 h-9 border-[3px] border-white/40 border-t-white rounded-full animate-spin" />
+          ) : isPunched ? (
+            "Punch Out"
+          ) : (
+            "Punch In"
+          )}
         </button>
       </div>
 
@@ -562,7 +577,8 @@ export default function HomePage() {
 
         <button
           onClick={handleManualSave}
-          className={`w-full py-3.5 text-white font-semibold rounded-xl active:scale-95 transition-all duration-150 text-sm ${
+          disabled={busy}
+          className={`w-full py-3.5 text-white font-semibold rounded-xl active:scale-95 transition-all duration-150 text-sm disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100 ${
             manType === "WFH"
               ? "bg-violet-600 hover:bg-violet-700"
               : manType === "Leave"
@@ -570,7 +586,9 @@ export default function HomePage() {
               : "bg-slate-800 hover:bg-slate-900"
           }`}
         >
-          {manType === "WFH"
+          {busy
+            ? "Saving…"
+            : manType === "WFH"
             ? "Save WFH Entry"
             : manType === "Leave"
             ? "Save Leave Entry"
@@ -617,15 +635,17 @@ export default function HomePage() {
             <div className="grid grid-cols-2 gap-3 mt-6">
               <button
                 onClick={() => setPunchInConflict(false)}
-                className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors text-sm"
+                disabled={busy}
+                className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
                 onClick={handlePunchInConfirmed}
-                className="py-3 bg-rose-500 hover:bg-rose-600 text-white font-semibold rounded-xl transition-colors text-sm"
+                disabled={busy}
+                className="py-3 bg-rose-500 hover:bg-rose-600 text-white font-semibold rounded-xl transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Overwrite
+                {busy ? "Saving…" : "Overwrite"}
               </button>
             </div>
           </div>
@@ -683,26 +703,28 @@ export default function HomePage() {
                 : "Mark today as On Leave?"}
             </h3>
             <p className="text-sm text-slate-500 text-center mt-2">
-              {hasTimeEntryForDate(todayStr())
+              {todayHasEntry
                 ? "An entry for today already exists and will be replaced."
                 : "An entry for today will be created. No times needed."}
             </p>
             <div className="grid grid-cols-2 gap-3 mt-6">
               <button
                 onClick={() => setQuickEntryType(null)}
-                className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors text-sm"
+                disabled={busy}
+                className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
                 onClick={handleQuickEntryConfirmed}
-                className={`py-3 text-white font-semibold rounded-xl transition-colors text-sm ${
+                disabled={busy}
+                className={`py-3 text-white font-semibold rounded-xl transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed ${
                   quickEntryType === "WFH"
                     ? "bg-violet-600 hover:bg-violet-700"
                     : "bg-amber-500 hover:bg-amber-600"
                 }`}
               >
-                Confirm
+                {busy ? "Saving…" : "Confirm"}
               </button>
             </div>
           </div>
@@ -711,7 +733,7 @@ export default function HomePage() {
 
       {/* Punch-out confirmation */}
       {confirmPunchOut && active && (() => {
-        const preview = getPunchOutPreview(active, now);
+        const preview = getPunchOutPreview(active, now, allRecords);
         return (
         <div
           className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4"
@@ -796,15 +818,17 @@ export default function HomePage() {
             <div className="grid grid-cols-2 gap-3 mt-6">
               <button
                 onClick={() => setConfirmPunchOut(false)}
-                className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors text-sm"
+                disabled={busy}
+                className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 Keep Working
               </button>
               <button
                 onClick={handlePunchOutConfirmed}
-                className="py-3 bg-rose-500 hover:bg-rose-600 text-white font-semibold rounded-xl transition-colors text-sm"
+                disabled={busy}
+                className="py-3 bg-rose-500 hover:bg-rose-600 text-white font-semibold rounded-xl transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Punch Out
+                {busy ? "Saving…" : "Punch Out"}
               </button>
             </div>
           </div>

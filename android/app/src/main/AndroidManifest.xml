@@ -18,6 +18,20 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!--
+              Google OAuth callback. Supabase redirects here after sign-in and
+              Capacitor's App plugin hands the URL to AuthContext, which
+              exchanges the code for a session. The scheme+host must match
+              NATIVE_REDIRECT in src/lib/auth.ts and be listed under
+              Supabase -> Authentication -> URL Configuration.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.timesheet.app" android:host="auth-callback" />
+            </intent-filter>
         </activity>
 
         <provider

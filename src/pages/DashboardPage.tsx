@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { v4 as uuidv4 } from "uuid";
 import {
   getRecords,
@@ -8,6 +8,12 @@ import {
   deleteRecord,
   addRecord,
 } from "../lib/storage";
+import { useAuth } from "../context/AuthContext";
+import { useSync } from "../context/SyncContext";
+import SyncBanner from "../components/SyncBanner";
+import { clearUserLocalState } from "../lib/offlineQueue";
+import { isNetworkError } from "../lib/network";
+import { deleteOwnAccount } from "../lib/auth";
 import { buildTimesheetPdfBlob } from "../lib/pdfExport";
 import {
   parseImportJson,
@@ -120,9 +126,15 @@ function monthLabel(key: string) {
 }
 
 export default function DashboardPage() {
+  const { displayName, user, signOut } = useAuth();
+  const { pending, refreshPending } = useSync();
   const [records, setRecords] = useState<TimeRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [busy, setBusy] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(monthKey(new Date()));
   const [eraseStep, setEraseStep] = useState<0 | 1 | 2>(0);
+  const [deleteAccountStep, setDeleteAccountStep] = useState<0 | 1 | 2>(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [importErrors, setImportErrors] = useState<string[] | null>(null);
@@ -146,14 +158,58 @@ export default function DashboardPage() {
     localStorage.setItem("dashboard_view", view);
   }, [view]);
 
-  useEffect(() => {
-    setRecords(getRecords());
-  }, []);
+  const reload = useCallback(async () => {
+    try {
+      setRecords(await getRecords());
+      setLoadError("");
+    } catch (err) {
+      setLoadError(
+        err instanceof Error ? err.message : "Could not load your records."
+      );
+    } finally {
+      setLoading(false);
+      // Mutation handlers all end in reload(), so refreshing the pending
+      // count here keeps the sync banner and badges accurate.
+      refreshPending();
+    }
+  }, [refreshPending]);
 
-  function handleEraseConfirmed() {
-    clearAllRecords();
-    setRecords([]);
-    setEraseStep(0);
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  async function handleEraseConfirmed() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await clearAllRecords();
+      await reload();
+      setEraseStep(0);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Could not erase records.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteAccountConfirmed() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await deleteOwnAccount();
+      // The account is gone, so any queued edits are meaningless — drop them
+      // before signOut, which would otherwise try to sync and fail.
+      if (user?.id) clearUserLocalState(user.id);
+      // signOut clears the session; App swaps back to the login screen.
+      await signOut();
+    } catch (err) {
+      setLoadError(
+        err instanceof Error ? err.message : "Could not delete your account."
+      );
+      setDeleteAccountStep(0);
+    } finally {
+      setBusy(false);
+    }
   }
 
   function openImportPicker() {
@@ -191,6 +247,7 @@ export default function DashboardPage() {
     // Synthesize a transient placeholder for the modal — saved later as a Note record.
     setEditing({
       id: "",
+      userId: "",
       date: dateStr,
       timeIn: "",
       timeOut: null,
@@ -206,57 +263,88 @@ export default function DashboardPage() {
     setDeleteStep(0);
   }
 
-  function handleSaveNotes() {
-    if (!editing) return;
+  async function handleSaveNotes() {
+    if (!editing || busy) return;
     const trimmed = notesDraft.trim();
+    setBusy(true);
 
-    if (editing.id === "") {
-      // Notes-only record for an empty date — only create if user typed something
-      if (trimmed === "") {
-        closeEdit();
-        return;
-      }
-      addRecord({
-        id: uuidv4(),
-        date: editing.date,
-        timeIn: "",
-        timeOut: null,
-        totalHours: null,
-        status: "Note",
-        notes: trimmed,
-      });
-    } else {
-      const updated: TimeRecord = {
-        ...editing,
-        notes: trimmed === "" ? undefined : trimmed,
-      };
-      // If a "Note" record loses its notes, just delete it (no time data left)
-      if (updated.status === "Note" && !updated.notes) {
-        deleteRecord(updated.id);
+    try {
+      if (editing.id === "") {
+        // Notes-only record for an empty date — only create if user typed something
+        if (trimmed === "") {
+          closeEdit();
+          return;
+        }
+        await addRecord({
+          id: uuidv4(),
+          userId: "",
+          date: editing.date,
+          timeIn: "",
+          timeOut: null,
+          totalHours: null,
+          status: "Note",
+          notes: trimmed,
+        });
       } else {
-        updateRecord(updated);
+        const updated: TimeRecord = {
+          ...editing,
+          notes: trimmed === "" ? undefined : trimmed,
+        };
+        // If a "Note" record loses its notes, just delete it (no time data left)
+        if (updated.status === "Note" && !updated.notes) {
+          await deleteRecord(updated.id);
+        } else {
+          await updateRecord(updated);
+        }
       }
+      await reload();
+      closeEdit();
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Could not save notes.");
+    } finally {
+      setBusy(false);
     }
-    setRecords(getRecords());
-    closeEdit();
   }
 
-  function handleDeleteConfirmed() {
-    if (!editing) return;
-    deleteRecord(editing.id);
-    setRecords(getRecords());
-    closeEdit();
+  async function handleDeleteConfirmed() {
+    if (!editing || busy) return;
+    setBusy(true);
+    try {
+      await deleteRecord(editing.id);
+      await reload();
+      closeEdit();
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Could not delete entry.");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function handleImportConfirmed() {
-    if (!importPreview) return;
-    bulkImport(importPreview.records);
-    setRecords(getRecords());
-    const { total, willOverwrite } = importPreview;
-    const replaced = willOverwrite > 0 ? `, ${willOverwrite} replaced` : "";
-    setImportToast(`Imported ${total} ${total === 1 ? "entry" : "entries"}${replaced}.`);
-    setImportPreview(null);
-    setTimeout(() => setImportToast(""), 4000);
+  async function handleImportConfirmed() {
+    if (!importPreview || busy) return;
+    setBusy(true);
+    try {
+      await bulkImport(importPreview.records);
+      await reload();
+      const { total, willOverwrite } = importPreview;
+      const replaced = willOverwrite > 0 ? `, ${willOverwrite} replaced` : "";
+      setImportToast(`Imported ${total} ${total === 1 ? "entry" : "entries"}${replaced}.`);
+      setImportPreview(null);
+      setTimeout(() => setImportToast(""), 4000);
+    } catch (err) {
+      // Import is the one operation that isn't queued offline — a backup can
+      // be hundreds of rows, and it's never as time-critical as a punch.
+      setImportErrors([
+        isNetworkError(err)
+          ? "Import needs an internet connection. Reconnect and try again."
+          : err instanceof Error
+          ? err.message
+          : "Import failed. Please try again.",
+      ]);
+      setImportPreview(null);
+    } finally {
+      setBusy(false);
+    }
   }
 
   function openExportModal(kind: "pdf" | "json") {
@@ -319,6 +407,8 @@ export default function DashboardPage() {
           totalHours: monthTotal,
           avgHours: monthAvg,
           daysWorked: monthDays,
+          employeeName: displayName || undefined,
+          employeeEmail: user?.email,
         });
         const result = await saveBlob(blob, filename);
         reportExportResult(result, "pdf");
@@ -406,9 +496,11 @@ export default function DashboardPage() {
     <div className="max-w-md mx-auto px-4 pt-8">
       {/* Header */}
       <div className="mb-6 flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
-          <p className="text-slate-400 text-sm mt-0.5">Your work history</p>
+          <p className="text-slate-400 text-sm mt-0.5 truncate">
+            {displayName ? `${displayName}'s work history` : "Your work history"}
+          </p>
         </div>
         <div className="shrink-0 flex flex-col gap-2 items-end">
           <button
@@ -484,6 +576,14 @@ export default function DashboardPage() {
       {importToast && (
         <div className="mb-4 px-4 py-3 bg-emerald-50 border border-emerald-100 rounded-xl text-sm text-emerald-700 font-medium">
           {importToast}
+        </div>
+      )}
+
+      <SyncBanner />
+
+      {loadError && (
+        <div className="mb-4 px-4 py-3 bg-rose-50 border border-rose-100 rounded-xl text-sm text-rose-700">
+          {loadError}
         </div>
       )}
 
@@ -601,7 +701,16 @@ export default function DashboardPage() {
       </div>
 
       {/* Records */}
-      {view === "calendar" ? (
+      {loading ? (
+        <div className="space-y-2 pb-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="h-[74px] bg-white rounded-2xl border border-slate-100 shadow-sm animate-pulse"
+            />
+          ))}
+        </div>
+      ) : view === "calendar" ? (
         <div className="pb-4">
           {/* Weekday header */}
           <div className="grid grid-cols-7 gap-1 mb-1">
@@ -666,6 +775,12 @@ export default function DashboardPage() {
                   {hasNotes && (
                     <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-indigo-500" />
                   )}
+                  {pending.has(dateStr) && (
+                    <span
+                      title="Not synced yet"
+                      className="absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full bg-amber-500 ring-1 ring-amber-200"
+                    />
+                  )}
                 </button>
               );
             })}
@@ -700,6 +815,7 @@ export default function DashboardPage() {
             .map((record) => {
             const badge = hoursBadge(record.totalHours, record.status);
             const hasNotes = !!record.notes?.trim();
+            const isPending = pending.has(record.date);
             return (
               <button
                 key={record.id}
@@ -725,12 +841,30 @@ export default function DashboardPage() {
                       </svg>
                     )}
                   </p>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5">
                     {record.status === "WFH"
                       ? "Work from Home"
                       : record.status === "Leave"
                       ? "On Leave"
                       : `${fmt12(record.timeIn)} → ${fmt12(record.timeOut)}`}
+                    {isPending && (
+                      <span className="inline-flex items-center gap-1 text-amber-600 font-semibold">
+                        <svg
+                          className="w-3 h-3"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2.5}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
+                        </svg>
+                        Not synced
+                      </span>
+                    )}
                   </p>
                 </div>
                 <span className={`shrink-0 ml-3 px-3 py-1.5 rounded-full text-xs font-bold ${badge.cls}`}>
@@ -742,17 +876,56 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Erase data button */}
-      {records.length > 0 && (
-        <div className="pt-6 pb-4 flex justify-center">
+      {/* Account section */}
+      <div className="pt-8 pb-4 border-t border-slate-100 mt-4">
+        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+          Account
+        </p>
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+          <p className="text-sm font-semibold text-slate-700 truncate">
+            {displayName || "Signed in"}
+          </p>
+          {user?.email && (
+            <p className="text-xs text-slate-400 mt-0.5 truncate">{user.email}</p>
+          )}
           <button
-            onClick={() => setEraseStep(1)}
-            className="text-sm text-rose-500 hover:text-rose-600 font-medium px-4 py-2 rounded-lg hover:bg-rose-50 transition-colors"
+            onClick={() => void signOut()}
+            className="mt-4 w-full inline-flex items-center justify-center gap-2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl transition-colors"
           >
-            Erase All Data
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75"
+              />
+            </svg>
+            Sign Out
           </button>
         </div>
-      )}
+
+        <div className="mt-4 flex flex-col items-center gap-1">
+          {records.length > 0 && (
+            <button
+              onClick={() => setEraseStep(1)}
+              className="text-sm text-rose-500 hover:text-rose-600 font-medium px-4 py-2 rounded-lg hover:bg-rose-50 transition-colors"
+            >
+              Erase All Data
+            </button>
+          )}
+          <button
+            onClick={() => setDeleteAccountStep(1)}
+            className="text-xs text-slate-400 hover:text-rose-600 font-medium px-4 py-2 rounded-lg hover:bg-rose-50 transition-colors"
+          >
+            Delete My Account
+          </button>
+        </div>
+      </div>
 
       {/* Two-step erase confirmation modal */}
       {eraseStep > 0 && (
@@ -817,15 +990,103 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-2 gap-3 mt-6">
                   <button
                     onClick={() => setEraseStep(0)}
-                    className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors text-sm"
+                    disabled={busy}
+                    className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     Keep Data
                   </button>
                   <button
                     onClick={handleEraseConfirmed}
-                    className="py-3 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-xl transition-colors text-sm"
+                    disabled={busy}
+                    className="py-3 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-xl transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    Erase Forever
+                    {busy ? "Erasing…" : "Erase Forever"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Two-step account deletion modal (required by Google Play) */}
+      {deleteAccountStep > 0 && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => !busy && setDeleteAccountStep(0)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6"
+          >
+            <div className="w-12 h-12 bg-rose-100 rounded-full flex items-center justify-center mb-4 mx-auto">
+              <svg
+                className="w-6 h-6 text-rose-600"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                />
+              </svg>
+            </div>
+
+            {deleteAccountStep === 1 ? (
+              <>
+                <h3 className="text-lg font-bold text-slate-800 text-center">
+                  Delete your account?
+                </h3>
+                <p className="text-sm text-slate-500 text-center mt-2">
+                  Your account and all {records.length}{" "}
+                  {records.length === 1 ? "entry" : "entries"} will be
+                  permanently deleted. Export your data first if you want to
+                  keep a copy.
+                </p>
+                <div className="grid grid-cols-2 gap-3 mt-6">
+                  <button
+                    onClick={() => setDeleteAccountStep(0)}
+                    className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => setDeleteAccountStep(2)}
+                    className="py-3 bg-rose-500 hover:bg-rose-600 text-white font-semibold rounded-xl transition-colors text-sm"
+                  >
+                    Continue
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-bold text-slate-800 text-center">
+                  This cannot be undone
+                </h3>
+                <p className="text-sm text-slate-500 text-center mt-2">
+                  Tap{" "}
+                  <span className="font-semibold text-rose-600">
+                    Delete Forever
+                  </span>{" "}
+                  to permanently erase your account and sign out.
+                </p>
+                <div className="grid grid-cols-2 gap-3 mt-6">
+                  <button
+                    onClick={() => setDeleteAccountStep(0)}
+                    disabled={busy}
+                    className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    Keep Account
+                  </button>
+                  <button
+                    onClick={handleDeleteAccountConfirmed}
+                    disabled={busy}
+                    className="py-3 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-xl transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {busy ? "Deleting…" : "Delete Forever"}
                   </button>
                 </div>
               </>
@@ -891,9 +1152,10 @@ export default function DashboardPage() {
               </button>
               <button
                 onClick={handleImportConfirmed}
-                className="py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl transition-colors text-sm"
+                disabled={busy}
+                className="py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Import
+                {busy ? "Importing…" : "Import"}
               </button>
             </div>
           </div>
@@ -1180,9 +1442,10 @@ export default function DashboardPage() {
                       </button>
                       <button
                         onClick={handleDeleteConfirmed}
-                        className="py-3 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-xl transition-colors text-sm"
+                        disabled={busy}
+                        className="py-3 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-xl transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        Delete Forever
+                        {busy ? "Deleting…" : "Delete Forever"}
                       </button>
                     </div>
                   </>
@@ -1235,15 +1498,17 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-2 gap-3 mt-5">
                   <button
                     onClick={closeEdit}
-                    className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors text-sm"
+                    disabled={busy}
+                    className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSaveNotes}
-                    className="py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl transition-colors text-sm"
+                    disabled={busy}
+                    className="py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl transition-colors text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    Save
+                    {busy ? "Saving…" : "Save"}
                   </button>
                 </div>
 
