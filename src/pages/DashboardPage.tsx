@@ -11,6 +11,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { useSync } from "../context/SyncContext";
 import SyncBanner from "../components/SyncBanner";
+import SwipeableCalendar from "../components/SwipeableCalendar";
 import { clearUserLocalState } from "../lib/offlineQueue";
 import { isNetworkError } from "../lib/network";
 import { deleteOwnAccount } from "../lib/auth";
@@ -74,6 +75,8 @@ function StatusGlyph({ status }: { status: "WFH" | "Leave" }) {
         />
       </svg>
     );
+  // Paper plane — reads as "away / travelling" more clearly than a sun, which
+  // looked like a weather glyph.
   return (
     <svg
       className="w-5 h-5 text-amber-600"
@@ -85,7 +88,7 @@ function StatusGlyph({ status }: { status: "WFH" | "Leave" }) {
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
-        d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"
+        d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"
       />
     </svg>
   );
@@ -461,26 +464,8 @@ export default function DashboardPage() {
     [records, selectedMonth]
   );
 
-  const calendarCells = useMemo(() => {
-    const [yearStr, monStr] = selectedMonth.split("-");
-    const year = Number(yearStr);
-    const month = Number(monStr);
-    const daysInMonth = new Date(year, month, 0).getDate();
-    const firstWeekday = new Date(year, month - 1, 1).getDay(); // 0 = Sun
-    const byDate = new Map<string, TimeRecord>();
-    for (const r of filtered) byDate.set(r.date, r);
-    const cells: Array<
-      | { kind: "blank" }
-      | { kind: "day"; day: number; dateStr: string; record: TimeRecord | undefined }
-    > = [];
-    for (let i = 0; i < firstWeekday; i++) cells.push({ kind: "blank" });
-    for (let d = 1; d <= daysInMonth; d++) {
-      const dateStr = `${yearStr}-${monStr}-${String(d).padStart(2, "0")}`;
-      cells.push({ kind: "day", day: d, dateStr, record: byDate.get(dateStr) });
-    }
-    while (cells.length % 7 !== 0) cells.push({ kind: "blank" });
-    return cells;
-  }, [filtered, selectedMonth]);
+  // Calendar cells are built inside SwipeableCalendar — it needs three months
+  // at once (previous, current, next) to render the sliding track.
 
   const todayStr = new Date().toISOString().slice(0, 10);
 
@@ -711,25 +696,13 @@ export default function DashboardPage() {
           ))}
         </div>
       ) : view === "calendar" ? (
-        <div className="pb-4">
-          {/* Weekday header */}
-          <div className="grid grid-cols-7 gap-1 mb-1">
-            {["S", "M", "T", "W", "T", "F", "S"].map((w, i) => (
-              <div
-                key={i}
-                className="text-center text-[10px] font-semibold text-slate-400 uppercase py-1"
-              >
-                {w}
-              </div>
-            ))}
-          </div>
-
-          {/* Day cells */}
-          <div className="grid grid-cols-7 gap-1">
-            {calendarCells.map((cell, i) => {
-              if (cell.kind === "blank") {
-                return <div key={i} className="aspect-square" />;
-              }
+        <SwipeableCalendar
+          month={selectedMonth}
+          records={records}
+          onMonthChange={setSelectedMonth}
+          minMonth={months[months.length - 1]}
+          maxMonth={months[0]}
+          renderCell={(cell) => {
               const { day, dateStr, record } = cell;
               const isToday = dateStr === todayStr;
               const tint = record
@@ -746,7 +719,7 @@ export default function DashboardPage() {
                   : "";
               return (
                 <button
-                  key={i}
+                  key={dateStr}
                   onClick={() =>
                     record ? openRecord(record) : openEmptyDate(dateStr)
                   }
@@ -783,9 +756,8 @@ export default function DashboardPage() {
                   )}
                 </button>
               );
-            })}
-          </div>
-        </div>
+          }}
+        />
       ) : filtered.filter((r) => r.status !== "Note").length === 0 ? (
         <div className="text-center py-16">
           <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">

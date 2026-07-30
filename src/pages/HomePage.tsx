@@ -36,6 +36,21 @@ function toHM(hours: number): string {
   return `${h}:${String(m).padStart(2, "0")}`;
 }
 
+/** The monthly average each employee is expected to maintain. */
+const TARGET_AVG_HOURS = 8;
+
+function addHours(startMs: number, hours: number): Date {
+  return new Date(startMs + hours * 3600000);
+}
+
+/** "6:42 PM" */
+function fmtClock(d: Date): string {
+  const h = d.getHours();
+  return `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, "0")} ${
+    h >= 12 ? "PM" : "AM"
+  }`;
+}
+
 function avgColorClass(hours: number): string {
   if (hours > 0 && hours < 7) return "text-rose-600";
   if (hours >= 7 && hours < 8) return "text-amber-600";
@@ -64,11 +79,27 @@ function getPunchOutPreview(active: TimeRecord, now: Date, allRecords: TimeRecor
   const currentAvg = existingDays > 0 ? existingTotal / existingDays : 0;
   const newAvg = (existingTotal + sessionHours) / (existingDays + 1);
 
+  // Hours today must reach for the month's average to land on TARGET_AVG_HOURS
+  // across every completed day including this one. A surplus banked earlier in
+  // the month lowers this; a deficit raises it.
+  const neededHours =
+    TARGET_AVG_HOURS * (existingDays + 1) - existingTotal;
+  const targetMet = sessionHours >= neededHours;
+  // Clock time to punch out at. Null when the target is already met, or when
+  // it would fall past midnight — a "punch out at 1:30 AM" prompt is noise.
+  const targetTime =
+    targetMet || neededHours <= 0 ? null : addHours(start, neededHours);
+  const targetPastMidnight =
+    targetTime !== null && targetTime.getDate() !== new Date(start).getDate();
+
   return {
     sessionHours,
     currentAvg,
     newAvg,
     existingDays,
+    neededHours,
+    targetMet,
+    targetTime: targetPastMidnight ? null : targetTime,
     monthLabel: new Date(y, m - 1, 1).toLocaleDateString("en-US", {
       month: "long",
       year: "numeric",
@@ -472,7 +503,7 @@ export default function HomePage() {
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
-              d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"
+              d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"
             />
           </svg>
           On Leave
@@ -692,7 +723,7 @@ export default function HomePage() {
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"
+                    d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"
                   />
                 </svg>
               )}
@@ -813,6 +844,63 @@ export default function HomePage() {
                   </span>
                 </div>
               </div>
+
+              {/* Target for an 8h monthly average */}
+              {(preview.targetMet || preview.targetTime) && (
+                <>
+                  <div className="h-px bg-slate-200" />
+                  {preview.targetMet ? (
+                    <div className="flex items-start gap-2">
+                      <svg
+                        className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2.5}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M4.5 12.75l6 6 9-13.5"
+                        />
+                      </svg>
+                      <p className="text-xs text-emerald-700 leading-relaxed">
+                        You&apos;ve hit the{" "}
+                        <span className="font-bold">{TARGET_AVG_HOURS}h average</span> —
+                        good to punch out.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-2">
+                      <svg
+                        className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Punch out at{" "}
+                        <span className="font-bold text-indigo-600 tabular-nums">
+                          {fmtClock(preview.targetTime!)}
+                        </span>{" "}
+                        to keep a {TARGET_AVG_HOURS}h average
+                        <span className="text-slate-400">
+                          {" "}
+                          ({toHM(preview.neededHours)} today)
+                        </span>
+                        .
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3 mt-6">
