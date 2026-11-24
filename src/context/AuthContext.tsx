@@ -30,6 +30,15 @@ interface AuthValue {
   user: User | null;
   profile: Profile | null;
   loading: boolean;
+  /**
+   * True while the profile row is being fetched. Separate from `loading`, which
+   * only covers the session. A role-gated route must wait on this — otherwise
+   * `profile` is briefly null on every load and the guard flashes "not
+   * authorized" before the role arrives.
+   */
+  profileLoading: boolean;
+  /** Convenience for role gating. False until the profile has loaded. */
+  isAdmin: boolean;
   authError: string;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -43,6 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(true);
   const [authError, setAuthError] = useState("");
 
   // Restore any persisted session, then follow auth state changes.
@@ -105,17 +115,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const userId = session?.user?.id;
     if (!userId) {
       setProfile(null);
+      setProfileLoading(false);
       return;
     }
 
     let active = true;
+    setProfileLoading(true);
     fetchProfile(userId)
       .then((p) => {
         if (active) setProfile(p);
       })
       .catch(() => {
-        // Non-fatal: the app falls back to Google metadata for the name.
+        // Non-fatal for display: the app falls back to Google metadata for the
+        // name. It does mean `isAdmin` stays false, so a transient failure
+        // hides the admin view rather than exposing it — the safe direction.
         if (active) setProfile(null);
+      })
+      .finally(() => {
+        if (active) setProfileLoading(false);
       });
 
     return () => {
@@ -166,9 +183,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user?.email?.split("@")[0] ||
     "";
 
+  const isAdmin = profile?.role === "admin";
+
   return (
     <AuthContext.Provider
-      value={{ session, user, profile, loading, authError, signIn, signOut, displayName }}
+      value={{
+        session,
+        user,
+        profile,
+        loading,
+        profileLoading,
+        isAdmin,
+        authError,
+        signIn,
+        signOut,
+        displayName,
+      }}
     >
       {children}
     </AuthContext.Provider>

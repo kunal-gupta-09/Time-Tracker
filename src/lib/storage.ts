@@ -15,10 +15,19 @@ const TABLE = "records";
 const SELECT = "id, user_id, date, time_in, time_out, total_hours, status, notes";
 
 /**
- * Reads rely on Row-Level Security to scope rows to the caller — we never
- * filter by user_id on SELECT. Writes set user_id explicitly because the
- * column is NOT NULL, and RLS's `with check` rejects any value but the
- * caller's own.
+ * Everything in this module is the *signed-in user's own* timesheet. Both reads
+ * and writes filter on user_id explicitly.
+ *
+ * The filter on reads is not redundant with RLS. The select policies read
+ * `using (user_id = auth.uid() or is_admin())`, so for an account promoted to
+ * admin the policy widens to every row — and these employee-facing queries would
+ * start returning the whole company into that person's own Home and Dashboard,
+ * and poison their offline cache with other people's records. Filtering here
+ * keeps the personal pages personal regardless of role. Cross-user reads live in
+ * admin.ts, deliberately separate.
+ *
+ * RLS remains the security boundary: an employee still cannot read another
+ * employee's rows no matter what this client sends.
  *
  * Every mutation here is offline-tolerant: if the request fails because the
  * network is unreachable, the change is queued locally and replayed on
@@ -56,7 +65,11 @@ export async function getRecords(): Promise<TimeRecord[]> {
   const userId = await currentUserId();
   try {
     const { data, error } = await withTimeout(
-      supabase.from(TABLE).select(SELECT).order("date", { ascending: false })
+      supabase
+        .from(TABLE)
+        .select(SELECT)
+        .eq("user_id", userId)
+        .order("date", { ascending: false })
     );
 
     if (error) throw error;
@@ -110,6 +123,7 @@ export async function updateRecord(updated: TimeRecord): Promise<TimeRecord> {
           status: row.status,
           notes: row.notes,
         })
+        .eq("user_id", userId)
         .eq("id", updated.id)
         .select(SELECT)
         .single()
@@ -130,7 +144,7 @@ export async function deleteRecord(id: string): Promise<void> {
   const userId = await currentUserId();
   try {
     const { error } = await withTimeout(
-      supabase.from(TABLE).delete().eq("id", id)
+      supabase.from(TABLE).delete().eq("user_id", userId).eq("id", id)
     );
     if (error) throw error;
   } catch (err) {
@@ -167,6 +181,7 @@ export async function hasRecordForDate(date: string): Promise<boolean> {
       supabase
         .from(TABLE)
         .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
         .eq("date", date)
     );
 
@@ -187,6 +202,7 @@ export async function hasTimeEntryForDate(date: string): Promise<boolean> {
       supabase
         .from(TABLE)
         .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
         .eq("date", date)
         .neq("status", "Note")
     );
@@ -206,8 +222,16 @@ export async function hasTimeEntryForDate(date: string): Promise<boolean> {
 export async function getNotesForDate(date: string): Promise<string | undefined> {
   const userId = await currentUserId();
   try {
+    // The user_id filter is load-bearing here: maybeSingle() throws when the
+    // query matches more than one row, which for an admin would happen as soon
+    // as two employees have an entry on the same date.
     const { data, error } = await withTimeout(
-      supabase.from(TABLE).select("notes").eq("date", date).maybeSingle()
+      supabase
+        .from(TABLE)
+        .select("notes")
+        .eq("user_id", userId)
+        .eq("date", date)
+        .maybeSingle()
     );
 
     if (error) throw error;
@@ -224,7 +248,7 @@ export async function removeRecordsForDate(date: string): Promise<void> {
   const userId = await currentUserId();
   try {
     const { error } = await withTimeout(
-      supabase.from(TABLE).delete().eq("date", date)
+      supabase.from(TABLE).delete().eq("user_id", userId).eq("date", date)
     );
     if (error) throw error;
   } catch (err) {
@@ -298,9 +322,54 @@ export async function bulkImport(records: TimeRecord[]): Promise<void> {
 }
 
 /** Pure helper — unchanged since the localStorage version. */
+/**
+ * Hours between two "HH:MM" times on the SAME day.
+ *
+ * Returns a negative number when timeOut is earlier than timeIn — callers must
+ * treat that as invalid rather than saving it. For a session that spans days,
+ * use `calcTotalHoursAcrossDates`.
+ */
 export function calcTotalHours(timeIn: string, timeOut: string): number {
   const [inH, inM] = timeIn.split(":").map(Number);
   const [outH, outM] = timeOut.split(":").map(Number);
   const diffMin = outH * 60 + outM - (inH * 60 + inM);
   return Math.round((diffMin / 60) * 100) / 100;
+}
+
+/**
+ * Hours between a start and end that may fall on different dates.
+ *
+ * The same-day version subtracts clock times only, so a session started at
+ * 15:58 and ended the next day at 13:00 comes out negative. Punch-out then
+ * silently refused to save and the record stayed "Working" forever, with the
+ * elapsed timer climbing past 100 hours. Dates must be part of the arithmetic.
+ *
+ * Both dates are "YYYY-MM-DD", both times "HH:MM". Result is clamped at 0 —
+ * an end genuinely before the start is a caller error, not negative hours.
+ */
+export function calcTotalHoursAcrossDates(
+  dateIn: string,
+  timeIn: string,
+  dateOut: string,
+  timeOut: string
+): number {
+  const [yi, mi, di] = dateIn.split("-").map(Number);
+  const [hi, mni] = timeIn.split(":").map(Number);
+  const [yo, mo, dof] = dateOut.split("-").map(Number);
+  const [ho, mno] = timeOut.split(":").map(Number);
+
+  // Local-time Date objects, so DST transitions are handled by the platform.
+  const start = new Date(yi, mi - 1, di, hi, mni).getTime();
+  const end = new Date(yo, mo - 1, dof, ho, mno).getTime();
+
+  const hours = (end - start) / 3600000;
+  return hours <= 0 ? 0 : Math.round(hours * 100) / 100;
+}
+
+/** Today as "YYYY-MM-DD" in local time. */
+export function todayDateStr(): string {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(
+    n.getDate()
+  ).padStart(2, "0")}`;
 }

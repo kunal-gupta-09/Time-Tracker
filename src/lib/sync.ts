@@ -42,11 +42,16 @@ function differs(a: TimeRecord, b: TimeRecord): boolean {
 }
 
 async function fetchServerRecordForDate(
-  date: string
+  date: string,
+  userId: string
 ): Promise<TimeRecord | null> {
+  // Filtering by owner is required, not just tidy: RLS widens for admins, so
+  // without it maybeSingle() would throw the moment two employees share a date,
+  // and conflict detection would compare against someone else's row.
   const { data, error } = await supabase
     .from(TABLE)
     .select(SELECT)
+    .eq("user_id", userId)
     .eq("date", date)
     .maybeSingle();
 
@@ -109,19 +114,27 @@ async function applyMutation(
     }
 
     case "delete": {
-      const { error } = await supabase.from(TABLE).delete().eq("id", op.id);
+      const { error } = await supabase
+        .from(TABLE)
+        .delete()
+        .eq("user_id", userId)
+        .eq("id", op.id);
       if (error) throw error;
       return;
     }
 
     case "deleteDate": {
-      const { error } = await supabase.from(TABLE).delete().eq("date", op.date);
+      const { error } = await supabase
+        .from(TABLE)
+        .delete()
+        .eq("user_id", userId)
+        .eq("date", op.date);
       if (error) throw error;
       return;
     }
 
     case "upsert": {
-      const server = await fetchServerRecordForDate(op.record.date);
+      const server = await fetchServerRecordForDate(op.record.date, userId);
 
       // A conflict is only interesting if the server row is genuinely
       // different AND wasn't written by this same queued edit.
@@ -161,6 +174,7 @@ export async function pullAndCache(userId: string): Promise<TimeRecord[]> {
   const { data, error } = await supabase
     .from(TABLE)
     .select(SELECT)
+    .eq("user_id", userId)
     .order("date", { ascending: false });
 
   if (error) throw error;

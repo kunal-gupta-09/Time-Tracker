@@ -4,6 +4,8 @@ import {
   getRecords,
   updateRecord,
   calcTotalHours,
+  calcTotalHoursAcrossDates,
+  todayDateStr,
   upsertManualEntry,
   hasTimeEntryForDate,
   getNotesForDate,
@@ -273,8 +275,19 @@ export default function HomePage() {
   async function handlePunchOutConfirmed() {
     if (!active || busy) return;
     const outTime = nowTimeStr();
-    const totalHours = calcTotalHours(active.timeIn, outTime);
-    if (totalHours < 0) return;
+    const outDate = todayDateStr();
+
+    // Span the dates, not just the clock. Subtracting HH:MM alone made any
+    // session punched out on a later day come out negative, which the old
+    // guard turned into a silent no-op — the record stayed "Working" and the
+    // elapsed timer ran for days.
+    const totalHours = calcTotalHoursAcrossDates(
+      active.date,
+      active.timeIn,
+      outDate,
+      outTime
+    );
+
     setBusy(true);
     try {
       await updateRecord({

@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import BottomNav from "./components/BottomNav";
 import MigrationPrompt from "./components/MigrationPrompt";
 import ConflictModal from "./components/ConflictModal";
 import HomePage from "./pages/HomePage";
 import DashboardPage from "./pages/DashboardPage";
+import AdminPage from "./pages/AdminPage";
 import LoginPage from "./pages/LoginPage";
 import { useAuth } from "./context/AuthContext";
+import { canSeeAdmin } from "./lib/adminAccess";
 import { useSync } from "./context/SyncContext";
 import { readLegacyRecords } from "./lib/localMigration";
 import type { TimeRecord } from "./lib/types";
@@ -21,7 +23,7 @@ function Splash() {
 }
 
 export default function App() {
-  const { session, loading } = useAuth();
+  const { session, loading, isAdmin, profileLoading } = useAuth();
   const { syncTick } = useSync();
   const [legacy, setLegacy] = useState<TimeRecord[]>([]);
   const [legacyChecked, setLegacyChecked] = useState(false);
@@ -52,6 +54,20 @@ export default function App() {
         <Routes>
           <Route path="/" element={<HomePage key={pageKey} />} />
           <Route path="/dashboard" element={<DashboardPage key={pageKey} />} />
+          <Route
+            path="/admin"
+            element={
+              // Wait for the profile before deciding — otherwise a direct visit
+              // to /admin redirects away before the role has loaded.
+              profileLoading ? (
+                <Splash />
+              ) : canSeeAdmin(isAdmin) ? (
+                <AdminPage key={pageKey} />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
         </Routes>
       </div>
       <BottomNav />
