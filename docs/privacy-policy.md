@@ -1,6 +1,6 @@
 # Privacy Policy for Time Tracker
 
-**Last updated:** 30 July 2026
+**Last updated:** 24 November 2026
 
 Time Tracker ("the app") is a personal timesheet app that lets you record your
 own working hours. This policy explains what the app collects, why, and what
@@ -31,11 +31,31 @@ contacts, files, or any other Google service.
 - Day markers you choose (Work from Home, On Leave)
 - Any notes you type against a day
 
+**Location — only if you turn on Auto punch (Android, optional)**
+
+Auto punch clocks you in when you arrive at your office and out when you leave.
+It is off by default. If you turn it on:
+
+- **Your office's position** (latitude, longitude, and the radius you choose)
+  is saved to your account, so it is restored on a new phone.
+- The app uses your device's **precise location, including in the background**
+  (when the app is closed or not in use), solely to detect when you enter or
+  leave that one office area. Detection is done on your phone by Android's
+  geofencing service (Google Play services).
+- The only result recorded is the **time** you arrived or left, which becomes
+  your clock-in or clock-out time. **No location history or trail is stored
+  or uploaded**, and your location is never shared with your employer, other
+  users, or anyone else.
+
+You can turn Auto punch off or remove your office at any time from
+**Dashboard → Auto punch**, and revoke location access in Android settings.
+
 **What we do not collect**
 
 The app contains no analytics, advertising, tracking pixels, or third-party
-SDKs of that kind. We do not collect your location, contacts, photos, camera,
-microphone, device identifiers for advertising, or your browsing activity.
+SDKs of that kind. Apart from Auto punch as described above, we do not collect
+your location. We never collect your contacts, photos, camera, microphone,
+device identifiers for advertising, or your browsing activity.
 
 ---
 
@@ -46,6 +66,7 @@ microphone, device identifiers for advertising, or your browsing activity.
 | Email, name, account identifier | To create your account, sign you in, and keep your timesheet separate from everyone else's |
 | Profile picture URL | To display your name and picture in the app |
 | Timesheet entries and notes | To provide the app's core function — recording and reporting your hours |
+| Office position and background location (Auto punch only) | To punch you in and out automatically when you arrive at and leave your office |
 
 We do **not** use your data for advertising or profiling, and we do not sell it.
 
@@ -73,7 +94,9 @@ We do not sell, rent, or trade your personal information.
 Data is shared only with:
 
 - **Supabase** — our database and authentication provider, which stores the data on our behalf
-- **Google** — solely to authenticate you when you choose "Sign in with Google"
+- **Google** — to authenticate you when you choose "Sign in with Google", and,
+  if you turn on Auto punch, through Google Play services on your device, which
+  performs the office arrival/departure detection
 
 We may disclose information if legally required to do so.
 

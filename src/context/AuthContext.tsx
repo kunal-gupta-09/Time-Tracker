@@ -17,6 +17,8 @@ import {
   fetchProfile,
 } from "../lib/auth";
 import { syncQueue } from "../lib/sync";
+import { Geofence } from "../lib/geofence";
+import { processPendingEvents } from "../lib/autoPunchRunner";
 import {
   readQueue,
   clearUserLocalState,
@@ -157,6 +159,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // the queue is deliberately left on disk so the entries survive until
       // the same user signs back in.
       if (userId) {
+        // Apply any auto punches recorded while the app was closed, then stop
+        // geofencing — a shared phone must not punch the next person in as
+        // this one. Unapplied events stay on the phone, tagged with this
+        // user, and are applied when they sign back in.
+        try {
+          await processPendingEvents(userId);
+        } catch {
+          // Leave them for next sign-in.
+        }
+        await Geofence.clearOffice().catch(() => {});
         try {
           await syncQueue(userId);
         } catch {

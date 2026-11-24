@@ -120,6 +120,50 @@ create policy "delete own records" on records
   for delete using (user_id = auth.uid());
 
 -- ============================================================
+-- Office location for GPS auto punch-in / punch-out.
+--
+-- One row per user: each employee sets their own office from the app
+-- ("Use my current location as office"). Stored server-side only so a
+-- reinstall or a new phone restores it; the phone itself keeps the active
+-- copy and does the geofencing. No location trail is ever stored — only
+-- this one point and the arrival/departure times that land in `records`.
+--
+-- Separate table (not columns on `profiles`) so its RLS can be strictly
+-- owner-only with no admin read.
+-- ============================================================
+create table if not exists office_locations (
+  user_id     uuid primary key references auth.users(id) on delete cascade,
+  lat         double precision not null check (lat between -90 and 90),
+  lng         double precision not null check (lng between -180 and 180),
+  radius_m    integer not null default 200 check (radius_m between 100 and 1000),
+  enabled     boolean not null default true,
+  updated_at  timestamptz not null default now()
+);
+
+alter table office_locations enable row level security;
+
+drop trigger if exists office_locations_touch_updated_at on office_locations;
+create trigger office_locations_touch_updated_at
+  before update on office_locations
+  for each row execute function touch_updated_at();
+
+drop policy if exists "read own office" on office_locations;
+create policy "read own office" on office_locations
+  for select using (user_id = auth.uid());
+
+drop policy if exists "insert own office" on office_locations;
+create policy "insert own office" on office_locations
+  for insert with check (user_id = auth.uid());
+
+drop policy if exists "update own office" on office_locations;
+create policy "update own office" on office_locations
+  for update using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+drop policy if exists "delete own office" on office_locations;
+create policy "delete own office" on office_locations
+  for delete using (user_id = auth.uid());
+
+-- ============================================================
 -- Account deletion (Google Play requires an in-app deletion path
 -- for any app with sign-in). Deletes the caller's auth user; the
 -- cascades above remove their profile and records.

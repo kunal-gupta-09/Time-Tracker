@@ -250,7 +250,7 @@
   <header class="masthead">
     <div class="eyebrow">Time Tracker</div>
     <h1>Privacy Policy</h1>
-    <p class="updated">Last updated 30 July 2026</p>
+    <p class="updated">Last updated 24 November 2026</p>
   </header>
 
   <p class="lede">
@@ -283,10 +283,26 @@
       <li>Any notes you type against a day</li>
     </ul>
 
+    <h3>Location, only if you turn on Auto punch (Android, optional)</h3>
+    <p>
+      Auto punch clocks you in when you arrive at your office and out when you
+      leave. It is off by default. If you turn it on:
+    </p>
+    <ul>
+      <li><strong>Your office's position</strong> (latitude, longitude, and the radius you choose) is saved to your account, so it is restored on a new phone.</li>
+      <li>The app uses your device's <strong>precise location, including in the background</strong> (when the app is closed or not in use), solely to detect when you enter or leave that one office area. Detection is done on your phone by Android's geofencing service (Google Play services).</li>
+      <li>The only result recorded is the <strong>time</strong> you arrived or left, which becomes your clock-in or clock-out time. <strong>No location history or trail is stored or uploaded</strong>, and your location is never shared with your employer, other users, or anyone else.</li>
+    </ul>
+    <p>
+      You can turn Auto punch off or remove your office at any time from
+      <strong>Dashboard → Auto punch</strong>, and revoke location access in Android settings.
+    </p>
+
     <h3>What we do not collect</h3>
     <p>
-      The app contains no analytics, advertising, or tracking SDKs. We do not
-      collect your location, contacts, photos, camera, microphone, advertising
+      The app contains no analytics, advertising, or tracking SDKs. Apart from
+      Auto punch as described above, we do not collect your location. We never
+      collect your contacts, photos, camera, microphone, advertising
       identifiers, or your browsing activity.
     </p>
   </section>
@@ -310,6 +326,10 @@
           <tr>
             <td>Timesheet entries and notes</td>
             <td>To provide the app's core function — recording and reporting your hours</td>
+          </tr>
+          <tr>
+            <td>Office position and background location (Auto punch only)</td>
+            <td>To punch you in and out automatically when you arrive at and leave your office</td>
           </tr>
         </tbody>
       </table>
@@ -342,7 +362,7 @@
     <p>We do not sell, rent, or trade your personal information. Data is shared only with:</p>
     <ul>
       <li><strong>Supabase</strong> — our database and authentication provider, which stores the data on our behalf</li>
-      <li><strong>Google</strong> — solely to authenticate you when you choose "Sign in with Google"</li>
+      <li><strong>Google</strong> — to authenticate you when you choose "Sign in with Google", and, if you turn on Auto punch, through Google Play services on your device, which performs the office arrival/departure detection</li>
     </ul>
     <p>We may disclose information if we are legally required to do so.</p>
     <div class="note">

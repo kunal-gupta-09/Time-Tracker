@@ -12,6 +12,7 @@ import {
 } from "../lib/storage";
 import { useAuth } from "../context/AuthContext";
 import { useSync } from "../context/SyncContext";
+import { useAutoPunch } from "../context/AutoPunchContext";
 import SyncBanner from "../components/SyncBanner";
 import { errorMessage } from "../lib/network";
 import type { TimeRecord } from "../lib/types";
@@ -125,6 +126,7 @@ function elapsedFrom(date: string, timeIn: string, now: Date): string {
 export default function HomePage() {
   const { displayName } = useAuth();
   const { refreshPending } = useSync();
+  const { active: autoPunchActive } = useAutoPunch();
   const [active, setActive] = useState<TimeRecord | null>(null);
   const [allRecords, setAllRecords] = useState<TimeRecord[]>([]);
   const [clock, setClock] = useState("");
@@ -419,6 +421,12 @@ export default function HomePage() {
         <h1 className="text-2xl font-bold text-slate-800 mt-1">
           {isPunched ? "You're clocked in" : "Ready to start?"}
         </h1>
+        {autoPunchActive && (
+          <span className="inline-flex items-center gap-1.5 mt-2 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            Auto punch on
+          </span>
+        )}
       </div>
 
       <SyncBanner />

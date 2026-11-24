@@ -12,6 +12,8 @@ import { useAuth } from "../context/AuthContext";
 import { useSync } from "../context/SyncContext";
 import SyncBanner from "../components/SyncBanner";
 import SwipeableCalendar from "../components/SwipeableCalendar";
+import AutoPunchSettings from "../components/AutoPunchSettings";
+import { discardPendingEvents } from "../lib/autoPunchRunner";
 import { clearUserLocalState } from "../lib/offlineQueue";
 import { isNetworkError } from "../lib/network";
 import { deleteOwnAccount } from "../lib/auth";
@@ -202,7 +204,10 @@ export default function DashboardPage() {
       await deleteOwnAccount();
       // The account is gone, so any queued edits are meaningless — drop them
       // before signOut, which would otherwise try to sync and fail.
-      if (user?.id) clearUserLocalState(user.id);
+      if (user?.id) {
+        clearUserLocalState(user.id);
+        await discardPendingEvents(user.id).catch(() => {});
+      }
       // signOut clears the session; App swaps back to the login screen.
       await signOut();
     } catch (err) {
@@ -847,6 +852,8 @@ export default function DashboardPage() {
           })}
         </div>
       )}
+
+      <AutoPunchSettings />
 
       {/* Account section */}
       <div className="pt-8 pb-4 border-t border-slate-100 mt-4">

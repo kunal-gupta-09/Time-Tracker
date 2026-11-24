@@ -10,6 +10,7 @@ import LoginPage from "./pages/LoginPage";
 import { useAuth } from "./context/AuthContext";
 import { canSeeAdmin } from "./lib/adminAccess";
 import { useSync } from "./context/SyncContext";
+import { useAutoPunch } from "./context/AutoPunchContext";
 import { readLegacyRecords } from "./lib/localMigration";
 import type { TimeRecord } from "./lib/types";
 
@@ -25,6 +26,7 @@ function Splash() {
 export default function App() {
   const { session, loading, isAdmin, profileLoading } = useAuth();
   const { syncTick } = useSync();
+  const { autoPunchTick } = useAutoPunch();
   const [legacy, setLegacy] = useState<TimeRecord[]>([]);
   const [legacyChecked, setLegacyChecked] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -44,9 +46,9 @@ export default function App() {
 
   const showMigration = legacyChecked && legacy.length > 0;
 
-  // Remount pages when a background sync lands new server state, so the UI
-  // reflects what was just uploaded without the user pulling to refresh.
-  const pageKey = `${refreshKey}-${syncTick}`;
+  // Remount pages when a background sync or an auto punch lands new state, so
+  // the UI reflects it without the user pulling to refresh.
+  const pageKey = `${refreshKey}-${syncTick}-${autoPunchTick}`;
 
   return (
     <div className="min-h-screen flex flex-col">

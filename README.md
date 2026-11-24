@@ -10,6 +10,7 @@ Built as a Vite + React + TypeScript single-page app on [Supabase](https://supab
 
 - **Google Sign-In** — one-tap authentication on web and Android.
 - **Punch In / Punch Out** — large circular button on the Home screen; live `H:MM:SS` elapsed counter while a session is active.
+- **GPS auto punch (Android)** — set your office once; the app punches you in when you arrive and out when you leave, even with the app closed, with a notification for each. Multiple trips in a day follow first-in / last-out. See [Auto punch](#auto-punch-gps).
 - **Manual entry** — pick a date and Type (Time / WFH / Leave). Time entries support optional Time Out (leave blank to start a Working session retroactively).
 - **WFH & On Leave** — single-tap quick actions for today, or use the manual entry form for any date.
 - **Notes per date** — tap any date card (or any calendar cell) to add or edit notes; the cell shows a small dot when notes exist.
@@ -142,6 +143,7 @@ release tasks need it.
 5. **Data Safety form** — declare:
    - *Personal info → Name, Email* — account management, required, not shared
    - *App activity / Other* — work hours, app functionality, required
+   - *Location → Precise location* — app functionality, **optional** (Auto punch), not shared
    - Encrypted in transit: **yes**
    - Users can request deletion: **yes**
 
@@ -151,7 +153,12 @@ release tasks need it.
 7. **Store listing** — icon (in `assets/`), feature graphic, at least two
    screenshots, short and full descriptions.
 
-8. **Test on the internal testing track first**, with a real signed build, to
+8. **Background location declaration** — Play Console → *App content →
+   Sensitive permissions → Location*. Explain Auto punch and attach a short
+   video showing the in-app disclosure, the "Allow all the time" prompt, and an
+   automatic punch. Review takes longer than a normal update.
+
+9. **Test on the internal testing track first**, with a real signed build, to
    confirm Google Sign-In works under the production signature.
 
 ## Project structure
@@ -246,6 +253,65 @@ Only genuine network failures fall back to the queue. RLS denials and constraint
 - **Import requires a connection** — a backup can be hundreds of rows and is never as time-critical as a punch
 
 Queue logic is covered by a runtime test (19 assertions) exercising collapse, projection, deletes, `clearAll` precedence, and per-user isolation.
+
+## Auto punch (GPS)
+
+Android only; the card is hidden on web. Set up from **Dashboard → Auto punch**
+while standing in the office.
+
+**Setup.** An in-app disclosure (required by Play policy) is followed by the
+Android permission prompts in order: location → "Allow all the time" →
+notifications. The app takes a fresh GPS fix (rejected if worse than ±100 m),
+saves it to the `office_locations` table, and registers a geofence with the
+chosen radius (100–500 m, default 200 m).
+
+**How events flow.**
+
+1. Android's Geofencing API (Play Services) wakes
+   `GeofenceBroadcastReceiver` on ENTER/EXIT — even with the app killed.
+2. The receiver stores the event with its real timestamp in SharedPreferences
+   and posts a notification immediately. It cannot reach Supabase (no WebView,
+   no session), so it doesn't try.
+3. When the app opens or resumes, or immediately if it's already running,
+   `AutoPunchContext` drains the events through `processPendingEvents`
+   (`src/lib/autoPunchRunner.ts`). They are applied in time order via the
+   normal storage layer, so an offline drain lands in the offline queue like
+   any punch.
+
+**First-in / last-out** (`decideAutoPunch` in `src/lib/autoPunch.ts`, pure and
+unit-tested). There is one record per day:
+
+| Event | Today's record | Result |
+|---|---|---|
+| Enter | none / Note only | new Working session at the arrival time (notes kept) |
+| Enter | Working | nothing |
+| Enter | Completed, after its time out | reopened as Working; original time in kept |
+| Enter | earlier than recorded time in | time in moved earlier |
+| Enter | WFH / Leave | skipped, "skipped" notification |
+| Exit | open Working session (any date) | closed at the exit time |
+| Exit | nothing open, or exit before session start | nothing |
+
+Breaks outside the office therefore count as worked time. An open session from
+an earlier day (missed exit) is left for the user to fix, with a notification.
+
+**Robustness.**
+
+- Geofences are re-registered after reboot and app update (`BootReceiver`).
+- On app open the office is re-synced from Supabase without an immediate ENTER,
+  so opening the app never reopens a day you punched out of.
+- Repeated same-type transitions within 2 minutes are dropped as GPS noise.
+- Events are acked only after their write succeeds, and replays are no-ops.
+- Sign-out applies pending events and removes the geofence, so a shared phone
+  never punches the next person in as the previous one.
+
+**Limitations.** Android may deliver transitions 1–3 minutes late, and can miss
+them when location is off or the phone is in deep Doze. Punches made with the
+app closed reach the server (and the admin view) only when the app is next
+opened.
+
+**Tests.** `npm test` runs the rule tests (vitest). On Windows, run it from a
+shell whose path starts with uppercase `C:`. vitest 0.34 finds no tests when
+the drive letter is lowercase.
 
 ## License
 
