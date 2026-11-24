@@ -9,6 +9,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "android:sync": "npm run build && npx cap sync android",
+    "dev:staging": "vite --host --mode staging",
+    "build:staging": "tsc && vite build --mode staging",
+    "android:sync:staging": "npm run build:staging && npx cap sync android",
     "android:open": "npx cap open android"
   },
   "dependencies": {

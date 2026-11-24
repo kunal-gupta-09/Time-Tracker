@@ -10,6 +10,14 @@ if (!url || !anonKey) {
   );
 }
 
+// Vite layers `.env.staging.local` over `.env`. If the staging file is missing,
+// a "staging" build would quietly run against PRODUCTION. Refuse instead.
+if (import.meta.env.MODE === "staging" && import.meta.env.VITE_ENV_NAME !== "staging") {
+  throw new Error(
+    "Staging build without staging credentials. Copy .env.staging.example to .env.staging.local and fill it in."
+  );
+}
+
 export const supabase = createClient(url, anonKey, {
   auth: {
     persistSession: true,

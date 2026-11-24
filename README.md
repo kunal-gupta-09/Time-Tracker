@@ -61,6 +61,34 @@ Open the URL shown in the terminal. On your phone, use `http://<your-pc-lan-ip>:
 
 > If you used the app before it had accounts, your old localStorage entries are detected on first sign-in and you'll be offered a one-time upload into your account.
 
+## Staging environment
+
+A second Supabase project is used for testing, so production users are never
+affected by a test.
+
+| | Production | Staging |
+|---|---|---|
+| Env file | `.env` | `.env.staging.local` (copy `.env.staging.example`) |
+| Web | `npm run dev` | `npm run dev:staging` |
+| Android | `npm run android:sync` → `gradlew bundleRelease` | `npm run android:sync:staging` → `gradlew installStaging` |
+| App id / name | `com.timesheet.app` / Time Tracker | `com.timesheet.app.staging` / Time Tracker STAGING |
+
+The staging app installs **next to** the production app, and its sign-in deep
+link uses its own scheme, so the two never mix. A staging build shows a
+"STAGING" tag at the top of the screen. It refuses to start if
+`.env.staging.local` is missing, rather than silently using production.
+
+One-time staging setup:
+1. Create a second Supabase project and run all of `supabase/schema.sql` in it.
+2. Enable the Google provider with the same Google client ID and secret. In
+   Google Cloud, add `https://<staging-ref>.supabase.co/auth/v1/callback` to
+   that client's authorized redirect URIs.
+3. In the staging project's URL Configuration, add `com.timesheet.app.staging://auth-callback`
+   and `http://localhost:5173`.
+
+Don't copy production users' data into staging. Use your own JSON export, or
+start empty.
+
 ## Building the Android APK
 
 Requires JDK 17 and the Android SDK installed (no full Android Studio required — the command-line tools work).

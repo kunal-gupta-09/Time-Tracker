@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!-- Overrides for the `staging` build type, so it's obvious on the phone which app talks to which database. -->
+<resources>
+    <string name="app_name">Time Tracker STAGING</string>
+    <string name="title_activity_main">Time Tracker STAGING</string>
+    <string name="package_name">com.timesheet.app.staging</string>
+    <string name="custom_url_scheme">com.timesheet.app.staging</string>
+</resources>

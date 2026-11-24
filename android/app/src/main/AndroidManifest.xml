@@ -25,12 +25,16 @@
               exchanges the code for a session. The scheme+host must match
               NATIVE_REDIRECT in src/lib/auth.ts and be listed under
               Supabase -> Authentication -> URL Configuration.
+
+              Scheme = applicationId: "com.timesheet.app" for release/debug,
+              "com.timesheet.app.staging" for the staging build, so both apps
+              can be installed at once without a callback chooser.
             -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="com.timesheet.app" android:host="auth-callback" />
+                <data android:scheme="${applicationId}" android:host="auth-callback" />
             </intent-filter>
         </activity>
 

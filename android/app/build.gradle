@@ -52,6 +52,16 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+        // Test build against the STAGING Supabase project. Different
+        // applicationId, so it installs next to the real app instead of
+        // replacing it; name/label come from src/staging/res.
+        // Build with `npm run android:sync:staging` then `gradlew installStaging`.
+        staging {
+            initWith debug
+            applicationIdSuffix ".staging"
+            versionNameSuffix "-staging"
+            matchingFallbacks = ['debug']
+        }
     }
 }
 

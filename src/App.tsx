@@ -73,6 +73,14 @@ export default function App() {
         </Routes>
       </div>
       <BottomNav />
+      {import.meta.env.MODE === "staging" && (
+        // Unmissable reminder that this build talks to the staging database.
+        <div className="fixed top-0 inset-x-0 z-[60] pointer-events-none text-center">
+          <span className="inline-block px-3 py-0.5 rounded-b-lg bg-amber-500 text-white text-[10px] font-bold tracking-widest">
+            STAGING
+          </span>
+        </div>
+      )}
       {showMigration && (
         <MigrationPrompt
           records={legacy}

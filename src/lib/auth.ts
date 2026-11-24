@@ -5,10 +5,20 @@ import type { Profile } from "./types";
 
 /**
  * Deep link the Android app registers for the OAuth callback.
- * Must match the intent-filter in android/app/src/main/AndroidManifest.xml
- * AND be listed under Supabase -> Authentication -> URL Configuration.
+ *
+ * The scheme is the app's applicationId (see the intent-filter in
+ * AndroidManifest.xml), so the staging build (`com.timesheet.app.staging`) and
+ * the production app can be installed side by side without fighting over the
+ * sign-in callback. A staging web bundle only ever signs in via the staging
+ * scheme — if it were synced into the production app by mistake, sign-in
+ * fails rather than mixing databases.
+ *
+ * Each value must be listed under its Supabase project's
+ * Authentication -> URL Configuration.
  */
-export const NATIVE_REDIRECT = "com.timesheet.app://auth-callback";
+const APP_ID =
+  import.meta.env.MODE === "staging" ? "com.timesheet.app.staging" : "com.timesheet.app";
+export const NATIVE_REDIRECT = `${APP_ID}://auth-callback`;
 
 function redirectTarget(): string {
   return Capacitor.isNativePlatform() ? NATIVE_REDIRECT : window.location.origin;
