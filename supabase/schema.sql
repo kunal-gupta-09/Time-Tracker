@@ -137,8 +137,16 @@ create table if not exists office_locations (
   lng         double precision not null check (lng between -180 and 180),
   radius_m    integer not null default 200 check (radius_m between 100 and 1000),
   enabled     boolean not null default true,
+  -- Optional office Wi-Fi name (SSID, max 32 bytes). When set, auto punch-in
+  -- needs BOTH the geofence AND this Wi-Fi — for offices in shared buildings,
+  -- where GPS can't tell floors apart.
+  wifi_ssid   text check (char_length(wifi_ssid) between 1 and 32),
   updated_at  timestamptz not null default now()
 );
+
+-- For databases created before wifi_ssid existed (e.g. staging). No-op otherwise.
+alter table office_locations
+  add column if not exists wifi_ssid text check (char_length(wifi_ssid) between 1 and 32);
 
 alter table office_locations enable row level security;
 

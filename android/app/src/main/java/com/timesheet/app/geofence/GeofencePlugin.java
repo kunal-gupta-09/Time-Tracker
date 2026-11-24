@@ -181,13 +181,32 @@ public class GeofencePlugin extends Plugin {
             .addOnFailureListener(e -> call.reject(e.getMessage()));
     }
 
+    /**
+     * The Wi-Fi the phone is on now, for "Use current Wi-Fi". Resolves
+     * {ssid, bssid}, or {} when not on Wi-Fi or Android hides the name
+     * (location permission missing or location off).
+     */
+    @PluginMethod
+    public void getCurrentWifi(PluginCall call) {
+        JSObject o = new JSObject();
+        if (getPermissionState(LOCATION) == PermissionState.GRANTED) {
+            String[] w = WifiUtil.current(getContext());
+            if (w != null) {
+                o.put("ssid", w[0]);
+                if (w[1] != null) o.put("bssid", w[1]);
+            }
+        }
+        call.resolve(o);
+    }
+
     // ---------------- Office geofence ----------------
 
     /**
      * Saves the office and registers its geofence. No-op if this exact office
      * is already registered, so calling it on every app open is cheap.
      *
-     * Options: userId, lat, lng, radius, initialEnter (default false).
+     * Options: userId, lat, lng, radius, wifiSsid (null = GPS only),
+     * initialEnter (default false).
      */
     @PluginMethod
     public void setOffice(PluginCall call) {
@@ -195,13 +214,16 @@ public class GeofencePlugin extends Plugin {
         Double lat = call.getDouble("lat");
         Double lng = call.getDouble("lng");
         Double radius = call.getDouble("radius", 200.0);
+        String wifiSsid = call.getString("wifiSsid", null);
         boolean initialEnter = Boolean.TRUE.equals(call.getBoolean("initialEnter", false));
         if (userId == null || lat == null || lng == null) {
             call.reject("userId, lat and lng are required.");
             return;
         }
+        if (!GeofenceRegistrar.wifiSupported()) wifiSsid = null;
 
-        GeofenceStore.Office office = new GeofenceStore.Office(userId, lat, lng, radius.floatValue());
+        GeofenceStore.Office office =
+            new GeofenceStore.Office(userId, lat, lng, radius.floatValue(), wifiSsid);
         GeofenceStore.saveOffice(getContext(), office);
 
         if (office.signature().equals(GeofenceStore.getRegisteredSignature(getContext()))) {
@@ -247,8 +269,10 @@ public class GeofencePlugin extends Plugin {
             of.put("lat", office.lat);
             of.put("lng", office.lng);
             of.put("radius", (double) office.radius);
+            if (office.wifiSsid != null) of.put("wifiSsid", office.wifiSsid);
             o.put("office", of);
         }
+        o.put("wifiSupported", GeofenceRegistrar.wifiSupported());
         o.put("registered", office != null
             && office.signature().equals(GeofenceStore.getRegisteredSignature(getContext())));
 

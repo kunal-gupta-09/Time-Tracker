@@ -31,6 +31,10 @@ public final class GeofenceStore {
     private static final String K_LAST_MS = "last_ms";
     private static final String K_FIRST_IN_DATE = "first_in_date";
     private static final String K_FIRST_IN_MS = "first_in_ms";
+    private static final String K_INSIDE_FENCE = "inside_fence";
+    private static final String K_AT_OFFICE = "at_office";
+    private static final String K_AT_OFFICE_DAY = "at_office_day";
+    private static final String K_HINT_DAY = "hint_day";
 
     /** Bound so a phone that never opens the app can't grow this forever. */
     private static final int MAX_EVENTS = 500;
@@ -48,17 +52,20 @@ public final class GeofenceStore {
         public final double lat;
         public final double lng;
         public final float radius;
+        /** Office Wi-Fi name; null = GPS-only mode. See PresenceGate. */
+        public final String wifiSsid;
 
-        public Office(String userId, double lat, double lng, float radius) {
+        public Office(String userId, double lat, double lng, float radius, String wifiSsid) {
             this.userId = userId;
             this.lat = lat;
             this.lng = lng;
             this.radius = radius;
+            this.wifiSsid = PresenceGate.normalizeSsid(wifiSsid);
         }
 
         /** Identifies a registration, so an unchanged office isn't re-registered. */
         String signature() {
-            return userId + "|" + lat + "|" + lng + "|" + radius;
+            return userId + "|" + lat + "|" + lng + "|" + radius + "|" + (wifiSsid == null ? "" : wifiSsid);
         }
     }
 
@@ -69,6 +76,7 @@ public final class GeofenceStore {
             j.put("lat", o.lat);
             j.put("lng", o.lng);
             j.put("radius", (double) o.radius);
+            if (o.wifiSsid != null) j.put("wifiSsid", o.wifiSsid);
             prefs(ctx).edit().putString(K_OFFICE, j.toString()).apply();
         } catch (JSONException ignored) {
             // Only primitives — cannot fail in practice.
@@ -84,7 +92,8 @@ public final class GeofenceStore {
                 j.getString("userId"),
                 j.getDouble("lat"),
                 j.getDouble("lng"),
-                (float) j.getDouble("radius")
+                (float) j.getDouble("radius"),
+                j.optString("wifiSsid", null)
             );
         } catch (JSONException e) {
             return null;
@@ -99,7 +108,39 @@ public final class GeofenceStore {
             .remove(K_LAST_MS)
             .remove(K_FIRST_IN_DATE)
             .remove(K_FIRST_IN_MS)
+            .remove(K_INSIDE_FENCE)
+            .remove(K_AT_OFFICE)
+            .remove(K_AT_OFFICE_DAY)
+            .remove(K_HINT_DAY)
             .apply();
+    }
+
+    // ---------------- Presence state (PresenceGate) ----------------
+
+    public static synchronized PresenceGate.State getPresence(Context ctx) {
+        SharedPreferences p = prefs(ctx);
+        return new PresenceGate.State(
+            p.getBoolean(K_INSIDE_FENCE, false),
+            p.getBoolean(K_AT_OFFICE, false),
+            p.getString(K_AT_OFFICE_DAY, null)
+        );
+    }
+
+    public static synchronized void savePresence(Context ctx, PresenceGate.State s) {
+        SharedPreferences.Editor e = prefs(ctx).edit()
+            .putBoolean(K_INSIDE_FENCE, s.insideFence)
+            .putBoolean(K_AT_OFFICE, s.atOffice);
+        if (s.atOfficeDay == null) e.remove(K_AT_OFFICE_DAY);
+        else e.putString(K_AT_OFFICE_DAY, s.atOfficeDay);
+        e.commit(); // Like events: must survive the receiver's process dying.
+    }
+
+    /** True once per day, so the "connect to Wi-Fi" hint doesn't nag. */
+    public static synchronized boolean claimHintForDay(Context ctx, String day) {
+        SharedPreferences p = prefs(ctx);
+        if (day.equals(p.getString(K_HINT_DAY, null))) return false;
+        p.edit().putString(K_HINT_DAY, day).apply();
+        return true;
     }
 
     public static synchronized String getRegisteredSignature(Context ctx) {

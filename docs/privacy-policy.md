@@ -42,6 +42,11 @@ It is off by default. If you turn it on:
   (when the app is closed or not in use), solely to detect when you enter or
   leave that one office area. Detection is done on your phone by Android's
   geofencing service (Google Play services).
+- **Optional: your office Wi-Fi name.** If you turn on "Office Wi-Fi only"
+  (useful when your office shares a building), the name of your office's Wi-Fi
+  network is saved to your account, and the app checks which Wi-Fi network
+  your phone is connected to so it only punches you in on that network. No
+  other Wi-Fi names, nearby networks, or connection history are stored.
 - The only result recorded is the **time** you arrived or left, which becomes
   your clock-in or clock-out time. **No location history or trail is stored
   or uploaded**, and your location is never shared with your employer, other

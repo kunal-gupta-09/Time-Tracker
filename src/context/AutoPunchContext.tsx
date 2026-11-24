@@ -90,6 +90,7 @@ export function AutoPunchProvider({ children }: { children: ReactNode }) {
           lat: saved.lat,
           lng: saved.lng,
           radius: saved.radiusM,
+          wifiSsid: saved.wifiSsid,
           initialEnter: false,
         });
       } else {
@@ -106,6 +107,7 @@ export function AutoPunchProvider({ children }: { children: ReactNode }) {
           lng: native.office.lng,
           radiusM: native.office.radius,
           enabled: true,
+          wifiSsid: native.office.wifiSsid ?? null,
         });
       } else {
         setOffice(null);

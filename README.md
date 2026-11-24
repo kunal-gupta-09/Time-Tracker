@@ -322,6 +322,28 @@ unit-tested). There is one record per day:
 Breaks outside the office therefore count as worked time. An open session from
 an earlier day (missed exit) is left for the user to fix, with a notification.
 
+**Office Wi-Fi only (shared buildings).** GPS can't tell floors apart, so in a
+shared building the geofence fires for the lobby, the cafeteria and other
+companies' floors too. Users can add their office Wi-Fi name (SSID). Arrival
+then needs **both** the geofence and that Wi-Fi. The native `PresenceGate` is
+pure Java with JUnit tests (`gradlew testDebugUnitTest`) and applies these
+rules before any event is recorded, so the JS rules above are unchanged.
+
+| Situation | Result |
+|---|---|
+| Inside the geofence + on office Wi-Fi (either order) | arrival, at the moment the second one happens |
+| Inside the geofence, not on office Wi-Fi | no punch; one "connect to Wi-Fi" hint per day, before the first punch-in |
+| Office Wi-Fi name seen outside the geofence | ignored (stops a renamed hotspot at home from faking a punch-in) |
+| Roaming between access points, reconnecting | ignored |
+| Leaving the geofence after arriving | departure |
+| Losing Wi-Fi inside the building | ignored |
+| Leaving the geofence without ever reaching the office | ignored |
+
+Wi-Fi joins are delivered by a `ConnectivityManager` network callback
+(`WifiReceiver`, PendingIntent-based, works with the app killed, API 23+). Reading
+the SSID needs the location permission that auto punch already has. In this
+mode, a session punched in by hand is not punched out automatically.
+
 **Robustness.**
 
 - Geofences are re-registered after reboot and app update (`BootReceiver`).

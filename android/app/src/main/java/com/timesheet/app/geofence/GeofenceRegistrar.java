@@ -6,6 +6,9 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.ConnectivityManager;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.os.Build;
 
 import androidx.core.content.ContextCompat;
@@ -82,6 +85,11 @@ public final class GeofenceRegistrar {
             .addGeofence(fence)
             .build();
 
+        // Wi-Fi mode watches network connections too. Done here so BootReceiver
+        // (which calls register) restores it after a reboot as well.
+        if (office.wifiSsid != null) registerWifi(app);
+        else unregisterWifi(app);
+
         GeofencingClient client = LocationServices.getGeofencingClient(app);
         // Replace, not add alongside: remove first so a changed radius takes effect.
         return client.removeGeofences(Collections.singletonList(GEOFENCE_ID))
@@ -93,7 +101,54 @@ public final class GeofenceRegistrar {
     public static Task<Void> unregister(Context ctx) {
         Context app = ctx.getApplicationContext();
         GeofenceStore.setRegisteredSignature(app, null);
+        unregisterWifi(app);
         return LocationServices.getGeofencingClient(app)
             .removeGeofences(Collections.singletonList(GEOFENCE_ID));
+    }
+
+    // ---------------- Office Wi-Fi (PresenceGate's second signal) ----------------
+
+    /** PendingIntent-based network callbacks need API 23. */
+    public static boolean wifiSupported() {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.M;
+    }
+
+    private static PendingIntent wifiPendingIntent(Context ctx) {
+        Intent intent = new Intent(ctx, WifiReceiver.class);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        // ConnectivityManager adds the network extras, so it must be mutable.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) flags |= PendingIntent.FLAG_MUTABLE;
+        return PendingIntent.getBroadcast(ctx, 1, intent, flags);
+    }
+
+    /**
+     * Delivered to WifiReceiver whenever a Wi-Fi network becomes available,
+     * including with the app killed. Registering the same PendingIntent again
+     * replaces the earlier request, so this is safe to call repeatedly.
+     */
+    private static void registerWifi(Context ctx) {
+        if (!wifiSupported()) return;
+        ConnectivityManager cm = ctx.getSystemService(ConnectivityManager.class);
+        if (cm == null) return;
+        NetworkRequest req = new NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .build();
+        try {
+            cm.registerNetworkCallback(req, wifiPendingIntent(ctx));
+        } catch (RuntimeException e) {
+            // e.g. TooManyRequestsException on a misbehaving device. GPS still works.
+            android.util.Log.w("AutoPunch", "Wi-Fi callback registration failed", e);
+        }
+    }
+
+    private static void unregisterWifi(Context ctx) {
+        if (!wifiSupported()) return;
+        ConnectivityManager cm = ctx.getSystemService(ConnectivityManager.class);
+        if (cm == null) return;
+        try {
+            cm.unregisterNetworkCallback(wifiPendingIntent(ctx));
+        } catch (RuntimeException ignored) {
+            // Wasn't registered.
+        }
     }
 }

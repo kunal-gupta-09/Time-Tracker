@@ -18,6 +18,11 @@ export interface OfficeLocation {
   lng: number;
   radiusM: number;
   enabled: boolean;
+  /**
+   * Office Wi-Fi name. When set, punch-in needs the geofence AND this Wi-Fi
+   * (shared buildings). Null = GPS only.
+   */
+  wifiSsid: string | null;
 }
 
 interface OfficeRow {
@@ -25,20 +30,27 @@ interface OfficeRow {
   lng: number;
   radius_m: number;
   enabled: boolean;
+  wifi_ssid: string | null;
 }
 
 export async function getOffice(userId: string): Promise<OfficeLocation | null> {
   const { data, error } = await withTimeout(
     supabase
       .from("office_locations")
-      .select("lat, lng, radius_m, enabled")
+      .select("lat, lng, radius_m, enabled, wifi_ssid")
       .eq("user_id", userId)
       .maybeSingle()
   );
   if (error) throw error;
   if (!data) return null;
   const row = data as OfficeRow;
-  return { lat: row.lat, lng: row.lng, radiusM: row.radius_m, enabled: row.enabled };
+  return {
+    lat: row.lat,
+    lng: row.lng,
+    radiusM: row.radius_m,
+    enabled: row.enabled,
+    wifiSsid: row.wifi_ssid,
+  };
 }
 
 export async function saveOffice(userId: string, office: OfficeLocation): Promise<void> {
@@ -50,6 +62,7 @@ export async function saveOffice(userId: string, office: OfficeLocation): Promis
         lng: office.lng,
         radius_m: Math.round(office.radiusM),
         enabled: office.enabled,
+        wifi_ssid: office.wifiSsid?.trim() || null,
       },
       { onConflict: "user_id" }
     )

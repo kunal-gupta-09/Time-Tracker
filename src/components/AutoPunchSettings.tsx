@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useAutoPunch } from "../context/AutoPunchContext";
 import { Geofence, type GeofencePermissions } from "../lib/geofence";
@@ -35,6 +35,20 @@ export default function AutoPunchSettings() {
   const [disclosure, setDisclosure] = useState<null | "setup" | "enable">(null);
   const [radius, setRadius] = useState<number | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  // The Wi-Fi the phone is on now, offered as the office Wi-Fi.
+  const [currentSsid, setCurrentSsid] = useState<string | null>(null);
+
+  // Re-read whenever native status refreshes (app resume, reload, drain).
+  useEffect(() => {
+    if (!supported || !office) return;
+    let alive = true;
+    void Geofence.getCurrentWifiSsid()
+      .then((s) => alive && setCurrentSsid(s))
+      .catch(() => alive && setCurrentSsid(null));
+    return () => {
+      alive = false;
+    };
+  }, [supported, office, status]);
 
   if (!supported || !userId) return null;
 
@@ -87,7 +101,14 @@ export default function AutoPunchSettings() {
         return;
       }
 
-      const next = { lat: fix.lat, lng: fix.lng, radiusM: effectiveRadius, enabled: true };
+      // Re-setting the location keeps an office Wi-Fi that was already chosen.
+      const next = {
+        lat: fix.lat,
+        lng: fix.lng,
+        radiusM: effectiveRadius,
+        enabled: true,
+        wifiSsid: office?.wifiSsid ?? null,
+      };
       await saveOffice(userId, next);
       // initialEnter: they're standing in the office, so this punches them in
       // now if they aren't already — which is what they'd expect.
@@ -96,16 +117,71 @@ export default function AutoPunchSettings() {
         lat: next.lat,
         lng: next.lng,
         radius: next.radiusM,
+        wifiSsid: next.wifiSsid,
         initialEnter: true,
       });
       await reload();
       setInfo(
         res.registered
-          ? `Office saved (±${Math.round(fix.accuracy)} m). Auto punch is on.`
+          ? `Office saved (±${Math.round(fix.accuracy)} m). Auto punch is on.` +
+              (next.wifiSsid
+                ? ""
+                : " Shared building? Turn on \"Office Wi-Fi only\" below.")
           : `Office saved, but Android didn't start auto punch: ${res.reason ?? "unknown reason"}.`
       );
     } catch (err) {
       setInfo("");
+      setError(friendly(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Require the Wi-Fi the phone is on now (shared buildings). */
+  async function applyCurrentWifi() {
+    if (!office) return;
+    setBusy(true);
+    setError("");
+    setInfo("");
+    try {
+      const ssid = await Geofence.getCurrentWifiSsid();
+      if (!ssid) {
+        setError(
+          "Couldn't read a Wi-Fi name. Connect to your office Wi-Fi, make sure location is on, and try again."
+        );
+        return;
+      }
+      const next = { ...office, wifiSsid: ssid };
+      await saveOffice(userId, next);
+      // initialEnter: they're in the office right now, so the geofence
+      // confirms "inside" immediately and Wi-Fi mode starts in the right state.
+      await Geofence.setOffice({
+        userId,
+        lat: next.lat,
+        lng: next.lng,
+        radius: next.radiusM,
+        wifiSsid: ssid,
+        initialEnter: true,
+      });
+      await reload();
+      setInfo(`Auto punch-in now also needs "${ssid}" Wi-Fi.`);
+    } catch (err) {
+      setError(friendly(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeWifi() {
+    if (!office) return;
+    setBusy(true);
+    setError("");
+    setInfo("");
+    try {
+      await saveOffice(userId, { ...office, wifiSsid: null });
+      await reload();
+      setInfo("Office Wi-Fi removed. Auto punch uses GPS only.");
+    } catch (err) {
       setError(friendly(err));
     } finally {
       setBusy(false);
@@ -222,7 +298,8 @@ export default function AutoPunchSettings() {
             </p>
             <p className="text-xs text-slate-400 mt-0.5">
               {office
-                ? `Office set · ${office.radiusM} m radius`
+                ? `Office set · ${office.radiusM} m radius` +
+                  (office.wifiSsid ? ` · Wi-Fi "${office.wifiSsid}"` : "")
                 : "Uses GPS to punch you in when you arrive at the office and out when you leave."}
             </p>
           </div>
@@ -302,6 +379,57 @@ export default function AutoPunchSettings() {
           </div>
         )}
 
+        {office && status?.wifiSupported !== false && (
+          <div className="mt-4 pt-4 border-t border-slate-100">
+            <p className="text-xs font-semibold text-slate-600">Office Wi-Fi only</p>
+            {office.wifiSsid ? (
+              <>
+                <p className="text-xs text-slate-500 mt-1">
+                  Punch-in needs you inside the office area <b>and</b> on{" "}
+                  <span className="font-semibold text-slate-700">"{office.wifiSsid}"</span>.
+                  {currentSsid && currentSsid.toLowerCase() === office.wifiSsid.toLowerCase() && (
+                    <span className="text-emerald-600"> Connected now.</span>
+                  )}
+                </p>
+                <div className="flex gap-3 mt-2">
+                  {currentSsid && currentSsid.toLowerCase() !== office.wifiSsid.toLowerCase() && (
+                    <button
+                      disabled={busy}
+                      onClick={() => void applyCurrentWifi()}
+                      className="text-xs font-semibold text-indigo-600"
+                    >
+                      Use "{currentSsid}" instead
+                    </button>
+                  )}
+                  <button
+                    disabled={busy}
+                    onClick={() => void removeWifi()}
+                    className="text-xs font-medium text-slate-400 hover:text-rose-600"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-slate-500 mt-1">
+                  For shared buildings: only punch in once you're on your office's own Wi-Fi, so the
+                  lobby, cafeteria or other floors don't count.
+                </p>
+                <button
+                  disabled={busy || !currentSsid}
+                  onClick={() => void applyCurrentWifi()}
+                  className="mt-2 w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition-colors disabled:opacity-60"
+                >
+                  {currentSsid
+                    ? `Use current Wi-Fi ("${currentSsid}")`
+                    : "Connect to your office Wi-Fi to set this"}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
         {last && office?.enabled && (
           <p className="text-xs text-slate-400 mt-3">
             Last: {last.type === "enter" ? "arrived" : "left"}{" "}
@@ -336,6 +464,7 @@ export default function AutoPunchSettings() {
           <ul className="list-disc pl-4 mt-2 space-y-1">
             <li>Your first arrival of the day is your punch-in; your last departure is your punch-out. Breaks outside count as worked time.</li>
             <li>Days marked WFH or Leave are never changed.</li>
+            <li>With Office Wi-Fi only on: you're punched in when you're inside the office area <i>and</i> join the office Wi-Fi. Leaving the area punches you out; losing Wi-Fi inside the building doesn't.</li>
             <li>Android can report arrivals 1–3 minutes late, and can miss them if location is off. The Punch button still works as normal.</li>
             <li>Punches made while the app is closed reach your account the next time you open it.</li>
             <li>Only your office point and your punch times are stored — never a location history.</li>
@@ -359,7 +488,7 @@ export default function AutoPunchSettings() {
               and out when you leave</b>, even when the app is closed or not in use.
             </p>
             <ul className="text-sm text-slate-500 mt-3 list-disc pl-5 space-y-1">
-              <li>Your office's position is saved to your account.</li>
+              <li>Your office's position (and, if you choose, its Wi-Fi name) is saved to your account.</li>
               <li>Only arrival and departure times are recorded — no location history is stored or shared.</li>
               <li>You can turn this off or remove your office at any time.</li>
             </ul>

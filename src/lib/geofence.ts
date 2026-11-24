@@ -31,10 +31,19 @@ export interface NativeOffice {
   lat: number;
   lng: number;
   radius: number;
+  /** Office Wi-Fi name; omitted/null = GPS only. */
+  wifiSsid?: string | null;
+}
+
+export interface CurrentWifi {
+  ssid?: string;
+  bssid?: string;
 }
 
 export interface GeofenceStatus {
   supported: boolean;
+  /** Wi-Fi mode needs Android 6+. */
+  wifiSupported?: boolean;
   permissions: GeofencePermissions;
   office?: NativeOffice;
   /** True when the current office's geofence is live with the OS. */
@@ -48,6 +57,7 @@ interface GeofencePlugin {
   requestNotifications(): Promise<GeofencePermissions>;
   openAppSettings(): Promise<void>;
   getCurrentLocation(): Promise<{ lat: number; lng: number; accuracy: number }>;
+  getCurrentWifi(): Promise<CurrentWifi>;
   setOffice(opts: NativeOffice & { initialEnter?: boolean }): Promise<{
     registered: boolean;
     reason?: string;
@@ -85,6 +95,12 @@ export const Geofence = {
   getCurrentLocation: () => {
     if (!geofenceSupported) return Promise.reject(new Error("Auto punch needs the Android app."));
     return Native.getCurrentLocation();
+  },
+  /** The Wi-Fi name the phone is on now, or null (not on Wi-Fi / name hidden). */
+  getCurrentWifiSsid: async (): Promise<string | null> => {
+    if (!geofenceSupported) return null;
+    const w = await Native.getCurrentWifi();
+    return w.ssid ?? null;
   },
   setOffice: (opts: NativeOffice & { initialEnter?: boolean }) =>
     geofenceSupported
